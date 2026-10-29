@@ -87,13 +87,8 @@ export function texMarquee() {
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.shadowColor = '#2ee6ff'; g.shadowBlur = 38;
     g.fillStyle = '#dffaff';
-    g.font = '900 92px "PingFang SC",system-ui,sans-serif';
-    g.fillText('PACHINKO', w / 2, h / 2 - 8);
-
-    g.shadowColor = '#ff2f87'; g.shadowBlur = 18;
-    g.fillStyle = '#ff9ec6';
-    g.font = '700 22px system-ui,sans-serif';
-    g.fillText('D R O P   ·   3 D', w / 2, h - 26);
+    g.font = '900 96px "PingFang SC",system-ui,sans-serif';
+    g.fillText('PACHINKO', w / 2, h / 2 + 2);
     g.shadowBlur = 0;
 
     g.strokeStyle = 'rgba(46,230,255,.55)'; g.lineWidth = 3;
@@ -133,13 +128,16 @@ export function texMult(mult, hue = 'cyan') {
   });
 }
 
+/** 出口编号 1~8：只有数字本身（无底板），带霓虹描边 */
 export function texNum(n) {
   return canvasTex(128, 128, (g, w, h) => {
     g.clearRect(0, 0, w, h);
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillStyle = 'rgba(190,225,245,.85)';
-    g.font = '700 62px system-ui,sans-serif';
+    g.shadowColor = 'rgba(120,210,255,.85)'; g.shadowBlur = 18;
+    g.fillStyle = 'rgba(222,244,255,.96)';
+    g.font = '800 68px system-ui,sans-serif';
     g.fillText(String(n + 1), w / 2, h / 2);
+    g.shadowBlur = 0;
   });
 }
 

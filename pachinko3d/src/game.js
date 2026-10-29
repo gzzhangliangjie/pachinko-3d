@@ -304,13 +304,21 @@ function rampYAt(ax) {
     g.add(m);
   }
 
-  // 装填计数屏（挂在窗内上方）
+  // 装填计数屏：做成贴在玻璃外侧的显示模块（背板 + 屏面）。
+  // 之前挂在窗内（z=0.196），而斜坡金边在玻璃外（z≈0.236）更靠近相机，
+  // 透视投影 + bloom 光晕会把「装填 x/x」盖住；现在模块在所有灯管之前，永远可读。
   const c = document.createElement('canvas'); c.width = 256; c.height = 64;
   chipReadout.ctx = c.getContext('2d');
   chipReadout.tex = new THREE.CanvasTexture(c);
   chipReadout.tex.colorSpace = THREE.SRGBColorSpace;
+  const MOD_Z = GS_Z + 0.034;                 // 模块背板：在斜坡金边前表面(≈0.241)之外
+  const modBack = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.135, 0.008), new THREE.MeshStandardMaterial({
+    color: 0x0a0f18, roughness: 0.55, metalness: 0.45,
+  }));
+  modBack.position.set(cx, top - 0.075, MOD_Z);
+  g.add(modBack);
   const ro = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.11), new THREE.MeshBasicMaterial({ map: chipReadout.tex, transparent: true }));
-  ro.position.set(cx, top - 0.075, WIN_BACK_Z + 0.010);
+  ro.position.set(cx, top - 0.075, MOD_Z + 0.005);
   g.add(ro);
   drawReadout(0, 0);
 
@@ -470,22 +478,29 @@ const PLUNGE = { x: CFG.railX, y: CFG.railBottomY + 0.005, z: FRONT_Z + 0.03, tr
 
   // ---- 顶部圆弧面板：一整条大半径圆弧横跨机头上部（与物理弧完全重合）----
   {
-    const { domeCx, domeCy, domeR, domeXRight, domeXLeft } = CFG;
+    const { domeCx, domeCy, domeR } = CFG;
     const clamp = (v) => Math.max(-1, Math.min(1, v));
-    const aR = Math.acos(clamp((domeXRight - domeCx) / domeR));
-    const aL = Math.acos(clamp((domeXLeft - domeCx) / domeR));
+    // 视觉两端收进机头轮廓内（机头半宽 1.02），物理约束范围(domeXRight/XLeft)不受影响
+    const VIS_XR = 0.96, VIS_XL = -0.96;
+    const aR = Math.acos(clamp((VIS_XR - domeCx) / domeR));
+    const aL = Math.acos(clamp((VIS_XL - domeCx) / domeR));
     const segs = 56;
     for (let i = 0; i < segs; i++) {
       const a = aR + (aL - aR) * (i + 0.5) / segs;
       const step = (aL - aR) * domeR / segs;
       const len = step * 1.5;                      // 相邻板搭接，弧面没有断缝
       const q = a + Math.PI / 2;
-      // 面板本体（厚度朝外，像一整块弯过来的机壳）
-      const panel = new THREE.Mesh(new THREE.BoxGeometry(len, 0.070, 0.150), M.body);
-      panel.position.set(domeCx + (domeR + 0.035) * Math.cos(a), domeCy + (domeR + 0.035) * Math.sin(a), CFG.railZ);
+      // 面板本体（薄薄一层衬在钢导轨面背后，避免在机头下缘露出一条黑带）
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(len, 0.040, 0.150), M.body);
+      panel.position.set(domeCx + (domeR + 0.020) * Math.cos(a), domeCy + (domeR + 0.020) * Math.sin(a), CFG.railZ);
       panel.rotation.z = q;
       panel.castShadow = true;
       machine.add(panel);
+      // 拱肩顶部的霓虹描边：把露出的深色拱肩勾一条灯线
+      const topEdge = new THREE.Mesh(new THREE.BoxGeometry(len, 0.010, 0.140), neonMat(NEON.cyan, 1.1));
+      topEdge.position.set(domeCx + (domeR + 0.046) * Math.cos(a), domeCy + (domeR + 0.046) * Math.sin(a), CFG.railZ);
+      topEdge.rotation.z = q;
+      machine.add(topEdge);
       // 内表面（钢导轨面，球就在这上面滚）
       const face = new THREE.Mesh(new THREE.BoxGeometry(len, 0.010, 0.126), M.steel);
       face.position.set(domeCx + (domeR + 0.004) * Math.cos(a), domeCy + (domeR + 0.004) * Math.sin(a), CFG.railZ);
@@ -498,11 +513,29 @@ const PLUNGE = { x: CFG.railX, y: CFG.railBottomY + 0.005, z: FRONT_Z + 0.03, tr
       machine.add(edge);
     }
     // 圆弧两端封口
-    for (const x of [domeXRight, domeXLeft]) {
+    for (const x of [VIS_XR, VIS_XL]) {
       const y = domeCy + Math.sqrt(Math.max(0, domeR * domeR - (x - domeCx) ** 2));
       const cap = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.095, 0.150), M.dark);
       cap.position.set(x, y - 0.02, CFG.railZ);
       machine.add(cap);
+    }
+
+    // 拱肩填充：把弧面板与机头横梁之间的月牙空档填实（机身同色，不再露出背板的坑）
+    {
+      const topY = HEADER_Y - HEADER_H / 2;              // 机头横梁下缘 1.25
+      const shp = new THREE.Shape();
+      shp.moveTo(VIS_XR, topY);
+      const steps = 40;
+      for (let i = 0; i <= steps; i++) {
+        const x = VIS_XR - (VIS_XR - VIS_XL) * i / steps;
+        const y = domeCy + Math.sqrt(Math.max(0, (domeR + 0.028) ** 2 - x * x));  // 贴着弧面板外缘
+        shp.lineTo(x, Math.min(topY, y));
+      }
+      shp.lineTo(VIS_XL, topY);
+      shp.closePath();
+      const filler = new THREE.Mesh(new THREE.ShapeGeometry(shp), M.body);
+      filler.position.z = 0.040;                          // 在钉子/弧面板之后、背板之前
+      machine.add(filler);
     }
   }
 
@@ -672,16 +705,15 @@ const slots = [];
     beam.visible = false;
     board.add(beam);
 
-    // 出口编号 1~8：挂在洞口正上方，点亮时整块牌子变成金色发光
-    const numTex = texNum(i);
+    // 出口编号 1~8：数字直接印在背板上（不再垫一块小钢片），点亮时转成金色
     const plateMat = new THREE.MeshBasicMaterial({
-      map: numTex, transparent: true, opacity: 0.9, depthWrite: false, color: 0x7e8b99,
+      map: texNum(i), transparent: true, opacity: 0.85, depthWrite: false, color: 0x93a3b4,
     });
-    const numPlate = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.11), plateMat);
+    const numPlate = new THREE.Mesh(new THREE.PlaneGeometry(0.13, 0.13), plateMat);
     numPlate.position.set(cx, CFG.dividerTop + 0.085, 0.118);
     numPlate.renderOrder = 4;
     board.add(numPlate);
-    // 编号背后的金晕
+    // 出口上方的点亮金晕（配合底部光池，点亮时洞口整体泛金）
     const haloMat = new THREE.SpriteMaterial({
       map: GLOW_TEX, color: GOLDFX, transparent: true, opacity: 0,
       blending: THREE.AdditiveBlending, depthWrite: false,
@@ -699,10 +731,6 @@ const slots = [];
     pool.rotation.x = -Math.PI / 2;
     pool.position.set(cx, slotBot + 0.026, troughZ + 0.03);
     board.add(pool);
-    // 编号底板（小钢片，让数字有实体承载）
-    const numBase = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.085, 0.008), M.dark);
-    numBase.position.set(cx, CFG.dividerTop + 0.085, 0.112);
-    board.add(numBase);
 
     slots.push({ ring, ringMat, beam, beamMat, ledMat, cavMat, plateMat, halo, haloMat, poolMat, lit: false, mult: 0, cx });
   }
@@ -995,8 +1023,8 @@ function setSlotLed(i, lit, mult) {
     s.ledMat.emissive.setHex(0x04070c);
     s.ledMat.emissiveIntensity = 0.25;
     s.ledMat.color.setHex(0x0a121c);
-    s.plateMat.color.setHex(0x6d7a88);
-    s.plateMat.opacity = 0.72;
+    s.plateMat.color.setHex(0x8a99aa);
+    s.plateMat.opacity = 0.8;
     s.haloMat.opacity = 0;
     s.poolMat.opacity = 0;
     return;
