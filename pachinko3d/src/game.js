@@ -8,7 +8,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 
 import {
   CFG, buildPhysicsWorld, createBallAt, nudge, slotCenterX, slotIndexFromX,
-  railPath, localDir, localPos, domeConstrain, attachPegRoughness,
+  railPath, localDir, localPos, domeConstrain, laneConstrain, attachPegRoughness,
 } from './layout.mjs';
 import { texBackplate, texMarquee, texMult, texNum, makeMaterials, NEON, neonMat } from './art.js';
 import { drawRound, theoreticalRtp, SLOT_COUNT } from './rules.mjs';
@@ -178,9 +178,33 @@ function box(w, h, d, mat) {
     map: texMarquee(), emissiveMap: texMarquee(), emissive: 0xffffff, emissiveIntensity: 0.85,
     roughness: 0.35, metalness: 0.2,
   });
-  const marquee = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.20), marqueeMat);
-  marquee.position.set(0, HEADER_Y + HEADER_H / 2 - 0.16, FRONT_Z + 0.006);
+  const marquee = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.26), marqueeMat);
+  marquee.position.set(0, 1.715, FRONT_Z + 0.006);
   g.add(marquee);
+
+  // 招牌上缘一排灯泡（经典机台装饰，填掉招牌上方的空带）
+  {
+    const bulbGeo = new THREE.SphereGeometry(0.011, 10, 8);
+    for (let i = 0; i <= 14; i++) {
+      const warm = i % 2 ? NEON.gold : 0xffffff;
+      const bulb = new THREE.Mesh(bulbGeo, neonMat(warm, 1.5));
+      bulb.position.set(-0.90 + i * (1.80 / 14), 1.857, FRONT_Z + 0.012);
+      g.add(bulb);
+    }
+  }
+
+  // 左右扬声器格栅：填满机头两侧剩下的空板
+  for (const s of [-1, 1]) {
+    const grille = new THREE.Mesh(new THREE.CircleGeometry(0.062, 32), M.dark);
+    grille.position.set(s * 0.92, 1.41, FRONT_Z + 0.002);
+    g.add(grille);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.066, 0.008, 8, 36), M.chrome);
+    ring.position.set(s * 0.92, 1.41, FRONT_Z + 0.002);
+    g.add(ring);
+    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.015, 16), neonMat(s < 0 ? NEON.cyan : NEON.magenta, 1.3));
+    dot.position.set(s * 0.92, 1.41, FRONT_Z + 0.004);
+    g.add(dot);
+  }
 
   const bezels = [
     [OPEN_W + 0.10, 0.035, 0, OPEN_H / 2 + 0.017],
@@ -397,7 +421,8 @@ let plungerKnob = null;
 let plungerHit = null;
 let springMesh = null;
 const SPRING_LEN = 0.17;                 // 弹簧自然长度
-const PLUNGE = { x: CFG.railX, y: CFG.railBottomY + 0.005, z: FRONT_Z + 0.03, travel: 0.15 };
+const PLUNGE = { x: CFG.railX, y: CFG.railBottomY + 0.005, z: CFG.laneZ, travel: 0.15 };
+const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
 {
   const pts = railPath(CFG);
   for (let i = 0; i < pts.length - 1; i++) {
@@ -418,7 +443,7 @@ const PLUNGE = { x: CFG.railX, y: CFG.railBottomY + 0.005, z: FRONT_Z + 0.03, tr
     }
   }
   const stop = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.03, 0.075), M.chrome);
-  stop.position.set(CFG.railX, CFG.railBottomY - 0.015, CFG.railZ);
+  stop.position.set(CFG.railX, CFG.railBottomY - 0.015, CFG.laneZ);
   machine.add(stop);
 
   // ---- 弹射杆：竖直杆从通道底部伸下来，弹簧套在杆上 ----
@@ -561,6 +586,65 @@ const PLUNGE = { x: CFG.railX, y: CFG.railBottomY + 0.005, z: FRONT_Z + 0.03, tr
       }
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// 回球槽：出口落下的球沿这条槽滚回右侧弹射位
+// ---------------------------------------------------------------------------
+const RETURN_TROUGH = [
+  [-0.84, -1.170, 0.075],
+  [-0.20, -1.170, 0.085],
+  [0.40, -1.170, 0.105],
+  [0.76, -1.175, 0.160],
+  [0.88, -1.185, 0.232],
+  [CFG.railX, CFG.railBottomY + CFG.ballR + 0.01, CFG.laneZ],
+];
+{
+  const pv = (a) => new THREE.Vector3(a[0], a[1], a[2]);
+  for (let i = 0; i < RETURN_TROUGH.length - 1; i++) {
+    const a = pv(RETURN_TROUGH[i]), b = pv(RETURN_TROUGH[i + 1]);
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, mz = (a.z + b.z) / 2;
+    const len = Math.hypot(b.x - a.x, b.y - a.y) + 0.02;
+    const ang = Math.atan2(b.y - a.y, b.x - a.x);
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(len, 0.014, 0.115), M.dark);
+    floor.position.set(mx, my - 0.052, mz);
+    floor.rotation.z = ang;
+    machine.add(floor);
+    for (const s of [-1, 1]) {
+      const lip = new THREE.Mesh(new THREE.BoxGeometry(len, 0.038, 0.010), s < 0 ? M.steel : M.dark);
+      lip.position.set(mx, my - 0.028, mz + s * 0.058);
+      lip.rotation.z = ang;
+      machine.add(lip);
+    }
+  }
+  // 槽后裙板：把出口下方到机台底沿之间的空档补成机身
+  const apron = new THREE.Mesh(new THREE.BoxGeometry(1.90, 0.20, 0.02), M.body);
+  apron.position.set(0, -1.175, 0.045);
+  machine.add(apron);
+}
+
+// 球沿槽滚动的自转轴（绕机台局部 x 轴反向滚）
+const RETURN_AXLE = (() => {
+  const v = localDir(-1, 0, 0);
+  return new THREE.Vector3(v.x, v.y, v.z).normalize();
+})();
+function makeReturnPath(slotIdx) {
+  const sx = slotCenterX(slotIdx);
+  const pts = [
+    new THREE.Vector3(sx, CFG.floorY + 0.055, 0.055),
+    new THREE.Vector3(sx, -1.130, 0.070),
+  ];
+  for (const t of RETURN_TROUGH) {
+    if (t[0] > sx + 0.05) pts.push(new THREE.Vector3(t[0], t[1], t[2]));
+  }
+  const last = pts[pts.length - 1];
+  if (last.x < CFG.railX - 0.01) {
+    pts.push(new THREE.Vector3(CFG.railX, CFG.railBottomY + CFG.ballR + 0.01, CFG.laneZ));
+  }
+  // 局部坐标 -> 世界坐标（球 mesh 挂在 scene 上）
+  machine.updateMatrixWorld(true);
+  for (const p of pts) p.applyMatrix4(machine.matrixWorld);
+  return new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.4);
 }
 
 // ---------------------------------------------------------------------------
@@ -842,9 +926,10 @@ let ballMesh = null;
 let dyingBall = null;
 
 function spawnRailBall() {
+  if (dyingBall) { scene.remove(dyingBall.mesh); dyingBall.mesh.geometry.dispose(); dyingBall.mesh.material.dispose(); dyingBall = null; }
   removeBall();
   const y0 = CFG.railBottomY + CFG.ballR + 0.01;
-  ballBody = createBallAt(world, CFG, matBall, CFG.railX, y0, CFG.railZ, 0, 0, 0);
+  ballBody = createBallAt(world, CFG, matBall, CFG.railX, y0, CFG.laneZ, 0, 0, 0);
   ballBody.type = CANNON.Body.KINEMATIC;
   ballBody.addEventListener('collide', (e) => {
     const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
@@ -938,8 +1023,8 @@ const ui = {
   credits: document.getElementById('credits'),
   stakeView: document.getElementById('stakeView'),
   multView: document.getElementById('multView'),
+  litView: document.getElementById('litView'),
   rounds: document.getElementById('rounds'),
-  rtp: document.getElementById('rtp'),
   betGrid: document.getElementById('betGrid'),
   fireBtn: document.getElementById('fireBtn'),
   fireLabel: document.getElementById('fireLabel'),
@@ -971,9 +1056,7 @@ function setBtnLabel(main, sub) { ui.fireLabel.textContent = main; ui.fireSub.te
 function refreshHud() {
   ui.credits.textContent = fmt(state.chips);
   ui.rounds.textContent = state.rounds;
-  const rtp = state.totalBet > 0 ? (state.totalWin / state.totalBet) * 100 : null;
-  ui.rtp.textContent = rtp === null ? '--' : rtp.toFixed(1) + '%';
-  ui.rtp.style.color = rtp === null ? '' : rtp >= 96 ? 'var(--green)' : '#ffb56b';
+  ui.litView.textContent = state.round ? state.round.litCount : '--';
   ui.fireBtn.disabled = state.phase === 'loading' || state.phase === 'dropping' || state.phase === 'resolve';
   switch (state.phase) {
     case 'idle': setBtnLabel('下注', 'SPACE'); break;
@@ -1124,6 +1207,8 @@ function launch(instant = false) {
   if (!state.charging || state.phase !== 'armed' || !ballBody) return;
   state.charging = false;
   state.dragMode = false;
+  dropT = 0;
+  pendingLaunch = null;
   // 拉杆力道 -> 初速，全部交给物理：够力才爬得上弯道，不够力自然滚回
   const v0 = CFG.launchVMin + (CFG.launchVMax - CFG.launchVMin) * state.power;
   const up = localDir(0, 1, 0);
@@ -1142,6 +1227,16 @@ function launch(instant = false) {
   state.phase = 'dropping';
   audio.launch(state.power);
   refreshHud();
+}
+
+// 点按钮 / 敲空格：先让弹簧拉杆真的被拉下去，再弹出去（可见动作）
+function requestLaunch() {
+  if (!state.charging || state.phase !== 'armed') return;
+  if (plungerPull < Math.max(0.25, state.power * 0.75)) {
+    pendingLaunch = { t: 0, dur: 0.14 };
+    return;
+  }
+  launch();
 }
 
 function resolveSlot(idx) {
@@ -1181,7 +1276,9 @@ function resolveSlot(idx) {
 
   if (ballBody) { world.removeBody(ballBody); ballBody = null; }
   if (ballMesh) {
-    dyingBall = { mesh: ballMesh, t: 0 };
+    const curve = makeReturnPath(idx);
+    const len = curve.getLength();
+    dyingBall = { mesh: ballMesh, t: 0, u: 0, len, curve, dur: Math.max(0.45, Math.min(0.85, len / 2.8)) };
     ballMesh = null;
   }
 
@@ -1191,7 +1288,6 @@ function resolveSlot(idx) {
   refreshHud();
 
   setTimeout(() => {
-    if (dyingBall) { scene.remove(dyingBall.mesh); dyingBall.mesh.geometry.dispose(); dyingBall.mesh.material.dispose(); dyingBall = null; }
     state.phase = 'idle';
     newRound();                     // 立刻摇下一局：倍数先出，再投注
     if (state.auto > 0) {
@@ -1206,7 +1302,7 @@ function autoStep() {
   if (state.phase !== 'idle') return;
   insertChips();                       // 自动试玩也走完整的筹码装填动画
   const tryFire = () => {
-    if (state.phase === 'armed') { state.power = 0.35 + Math.random() * 0.5; launch(); return; }
+    if (state.phase === 'armed') { state.charging = true; state.power = 0.35 + Math.random() * 0.5; requestLaunch(); return; }
     if (state.phase === 'loading') setTimeout(tryFire, 220);
   };
   setTimeout(tryFire, 400);
@@ -1257,9 +1353,9 @@ window.addEventListener('pointerup', () => {
   if (dragCharge) {
     dragCharge = null;
     state.dragMode = false;
-    if (state.power < 0.06) state.power = 0.34;   // 只是点了一下：当作轻拉
+    if (state.power < 0.06) state.power = 0.62;   // 只是点了一下：给一个稳稳能出去的中等力道
   }
-  if (state.charging) launch();
+  if (state.charging) requestLaunch();
 });
 
 ui.autoBtn.onclick = () => {
@@ -1302,7 +1398,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Escape') ui.sheet.classList.remove('show');
 });
 window.addEventListener('keyup', (e) => {
-  if (e.code === 'Space' && state.charging) { e.preventDefault(); launch(); }
+  if (e.code === 'Space' && state.charging) { e.preventDefault(); requestLaunch(); }
 });
 window.addEventListener('pointerdown', () => ensureAudio(), { once: true });
 
@@ -1320,18 +1416,24 @@ let shake = 0;
 let flash = 0;
 let t = 0;
 let ballStuckT = 0;
+let dropT = 0;
+let pendingLaunch = null;
 let ballSlowT = 0;
 let ballEnteredField = false;
 let plungerPull = 0;
 let knobVel = 0;
 
 function animate(now) {
+  requestAnimationFrame(animate);       // 先续帧：下面任何提前 return 都不会把主循环弄死
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   t += dt;
 
   world.step(1 / 300, dt, 12);
-  if (ballBody && state.phase === 'dropping') domeConstrain(ballBody, CFG, 1 / 300);
+  if (ballBody && state.phase === 'dropping') {
+    laneConstrain(ballBody, CFG, 1 / 300);
+    domeConstrain(ballBody, CFG, 1 / 300);
+  }
 
   // ---- 筹码球装填动画：先在玻璃板面上滑落，再被高出玻璃的导条送进中间的洞 ----
   if (state.phase === 'loading') {
@@ -1394,7 +1496,13 @@ function animate(now) {
   }
 
   // ---- 弹射杆（往后拉 → 弹簧拉长；松手 → 弹簧把杆弹回，钢珠被顶出去）----
-  if (state.charging) {
+  if (pendingLaunch && state.charging) {
+    pendingLaunch.t += dt;
+    const k = Math.min(1, pendingLaunch.t / pendingLaunch.dur);
+    plungerPull = k * Math.max(0.55, state.power);
+    knobVel = 0;
+    if (k >= 1) launch();
+  } else if (state.charging) {
     if (!state.dragMode) {
       state.power += state.chargeDir * dt / 0.55;
       if (state.power >= 1) { state.power = 1; state.chargeDir = -1; }
@@ -1413,6 +1521,16 @@ function animate(now) {
   }
   if (plunger) plunger.position.y = PLUNGE.y - plungerPull * PLUNGE.travel;
   if (springMesh) springMesh.scale.y = Math.max(0.3, (SPRING_LEN + plungerPull * PLUNGE.travel) / SPRING_LEN);
+
+  // 待发时球就坐在拉杆头上：拉杆往下拉，球跟着一起沉下去
+  // 下沉量要限制住：沉太深会被压进滑道底板，球瞬间被弹飞/穿出世界（打不出去）
+  if (ballBody && state.phase === 'armed' && ballBody.type === CANNON.Body.KINEMATIC) {
+    const py = CFG.railBottomY + CFG.ballR + 0.01 - Math.min(BALL_SINK_MAX, plungerPull * PLUNGE.travel);
+    const p0 = localPos(CFG.railX, py, CFG.laneZ);
+    ballBody.position.set(p0.x, p0.y, p0.z);
+    ballBody.velocity.set(0, 0, 0);
+    ballBody.angularVelocity.set(0, 0, 0);
+  }
 
   // ---- 球 ----
   if (ballBody && ballMesh) {
@@ -1440,16 +1558,31 @@ function animate(now) {
     machine.worldToLocal(local);
 
     if (state.phase === 'dropping') {
+      dropT += dt;
+      // 兜底：球飞出台面/卡死就收回弹射位，别一直挂着"下落中"
+      const lost = Math.abs(local.x) > 1.18 || local.y < -1.5 || local.z > 0.6 || local.z < -0.4;
+      if (lost || dropT > 12) {
+        if (ballBody) { world.removeBody(ballBody); ballBody = null; }
+        if (ballMesh) { scene.remove(ballMesh); ballMesh.geometry.dispose(); ballMesh.material.dispose(); ballMesh = null; }
+        dropT = 0;
+        spawnRailBall();
+        state.phase = 'armed';
+        state.boost = null;
+        refreshHud();
+        return;
+      }
       // 力度不足：钢珠没爬上弯道又滚回底部 -> 回到待发状态重新蓄力
       const inRailBottom = local.x > CFG.railX - 0.12 && local.y < CFG.railBottomY + 0.5;
-      if (inRailBottom && ballBody.velocity.length() < 0.45) {
+      const fellOut = local.y < CFG.railBottomY - 0.10;      // 兜底：掉到滑道底以下直接收回
+      if (fellOut || (inRailBottom && ballBody.velocity.length() < 0.45)) {
         ballBody.type = CANNON.Body.KINEMATIC;
         ballBody.velocity.set(0, 0, 0);
         ballBody.angularVelocity.set(0, 0, 0);
-        const p0 = localPos(CFG.railX, CFG.railBottomY + CFG.ballR + 0.01, CFG.railZ);
+        const p0 = localPos(CFG.railX, CFG.railBottomY + CFG.ballR + 0.01, CFG.laneZ);
         ballBody.position.set(p0.x, p0.y, p0.z);
         state.phase = 'armed';
         state.boost = null;
+        dropT = 0;
         refreshHud();
         return;
       }
@@ -1475,18 +1608,19 @@ function animate(now) {
     for (const s of trail) s.material.opacity *= 0.9;
   }
 
-  // 下沉动画
-  if (dyingBall) {
+  // 回球：入口落下的球沿回球槽滚回弹射位（滚到位后就停在那儿，等下一局）
+  if (dyingBall && !dyingBall.done) {
     dyingBall.t += dt;
-    dyingBall.mesh.position.y -= 0.35 * dt;
-    const k = Math.min(1, dyingBall.t / 0.45);
-    dyingBall.mesh.scale.setScalar(1 - k * 0.55);
-    dyingBall.mesh.material.opacity = 1 - k;
+    const k = Math.min(1, dyingBall.t / dyingBall.dur);
+    const u = 1 - Math.pow(1 - k, 1.7);
+    const prev = dyingBall.u;
+    dyingBall.u = u;
+    dyingBall.mesh.position.copy(dyingBall.curve.getPointAt(u));
+    const ds = (u - prev) * dyingBall.len;
+    if (ds > 0) dyingBall.mesh.rotateOnWorldAxis(RETURN_AXLE, ds / CFG.ballR);
     if (k >= 1) {
-      scene.remove(dyingBall.mesh);
-      dyingBall.mesh.geometry.dispose();
-      dyingBall.mesh.material.dispose();
-      dyingBall = null;
+      dyingBall.done = true;
+      audio.chip(0);
     }
   }
 
@@ -1560,7 +1694,6 @@ function animate(now) {
   flash *= Math.pow(0.02, dt);
 
   composer.render();
-  requestAnimationFrame(animate);
 }
 
 window.addEventListener('resize', () => {
@@ -1588,6 +1721,7 @@ function showDebug(title, lines) {
 }
 
 if (location.hash.includes('simtest')) {
+  for (const k of Object.keys(audio)) if (typeof audio[k] === 'function') audio[k] = () => {};  // 无头环境 Web Audio 会让渲染进程崩
   setTimeout(() => {
     const log = [];
     try {
@@ -1599,6 +1733,7 @@ if (location.hash.includes('simtest')) {
         let guard = 0;
         while (state.phase === 'dropping' && guard++ < 300 * 15 && ballBody && ballMesh) {
           world.step(1 / 300);
+          laneConstrain(ballBody, CFG, 1 / 300);
           domeConstrain(ballBody, CFG, 1 / 300);
           ballStuckT += 1 / 300;
           if (ballStuckT > 0.26) { nudge(ballBody); ballStuckT = 0; }
@@ -1640,8 +1775,66 @@ if (location.hash.includes('auto')) {
     }, 2600);
   }
 }
+if (location.hash.includes('launchdbg')) {   // 调试：满力弹射并记录轨迹
+  setTimeout(() => insertChips(true), 400);
+  setTimeout(() => { state.power = 1; state.charging = true; launch(true); }, 700);
+  const traj = [];
+  const t0 = performance.now();
+  const tick = setInterval(() => {
+    if (!ballBody) return;
+    const l = new THREE.Vector3().copy(ballBody.position);
+    machine.worldToLocal(l);
+    traj.push(`${((performance.now() - t0) / 1000).toFixed(2)}s x=${l.x.toFixed(2)} y=${l.y.toFixed(2)} z=${l.z.toFixed(2)} v=${ballBody.velocity.length().toFixed(1)}`);
+    if (traj.length > 22) clearInterval(tick);
+  }, 60);
+  setTimeout(() => showDebug('LAUNCHDBG', traj.slice(-14)), 2200);
+}
+if (location.hash.includes('btndbg')) {      // 调试：模拟"按按钮下注 + 再按按钮拉杆"
+  const say = (s) => console.log('[BTNDBG]', s);
+  setTimeout(() => { insertChips(true); say('inserted phase=' + state.phase + ' ball=' + !!ballBody); }, 400);
+  setTimeout(() => { state.charging = true; state.power = 0.34; requestLaunch(); say('pressed phase=' + state.phase); }, 1000);
+  for (const ms of [1400, 1800, 2400, 3200, 4200, 5200]) {
+    setTimeout(() => {
+      const dp = dyingBall ? [dyingBall.mesh.position.x, dyingBall.mesh.position.y, dyingBall.mesh.position.z].map((v) => v.toFixed(2)).join(',') : '-';
+      say(`t=${ms} phase=${state.phase} ball=${!!ballBody} dying=${!!dyingBall} done=${dyingBall ? !!dyingBall.done : '-'} dpos=${dp}`);
+    }, ms);
+  }
+}
+if (location.hash.includes('uidbg')) {       // 调试：走真实 DOM 按钮事件，逐帧记录
+  const log = [];
+  const say = (s) => { log.push(s); if (log.length > 16) log.shift(); showDebug('UIDBG', log); console.log('[U]', s); };
+  for (const k of Object.keys(audio)) if (typeof audio[k] === 'function') audio[k] = () => {};  // 无头环境 Web Audio 会让渲染进程崩
+  const fire = () => {
+    const r = ui.fireBtn.getBoundingClientRect();
+    const o = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true, pointerId: 1 };
+    ui.fireBtn.dispatchEvent(new PointerEvent('pointerdown', o));
+    setTimeout(() => window.dispatchEvent(new PointerEvent('pointerup', o)), 110);
+  };
+  setTimeout(() => { insertChips(true); say('armed? ' + state.phase + ' ball=' + !!ballBody); }, 300);
+  setTimeout(() => { fire(); say('press armed=' + state.phase); }, 600);
+  let n = 0;
+  const tick = setInterval(() => {
+    if (!ballBody) { say('[' + (n++) + '] no ball'); return; }
+    const l = new THREE.Vector3().copy(ballBody.position); machine.worldToLocal(l);
+    say(`[${n++}] ${state.phase} chg=${state.charging ? 1 : 0} pend=${pendingLaunch ? 1 : 0} pull=${plungerPull.toFixed(2)} v=${ballBody.velocity.length().toFixed(2)} y=${l.y.toFixed(2)}`);
+  }, 120);
+  setTimeout(() => { clearInterval(tick); say('END ' + state.phase); }, 2600);
+}
 if (location.hash.includes('lit')) {         // 截图用：直接摆到已点亮状态
   setTimeout(() => { insertChips(true); }, 500);
+}
+if (location.hash.includes('returndbg')) {   // 截图用：摆一颗球在回球槽中段
+  setTimeout(() => {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(CFG.ballR, 26, 20), M.ball.clone());
+    scene.add(mesh);
+    if (!location.hash.includes('nopatch')) {
+      const curve = makeReturnPath(3);
+      dyingBall = { mesh, t: parseFloat(new URLSearchParams(location.hash.replace('#', '&')).get('rt') || '0'), u: 0, len: curve.getLength(), curve, dur: 0.8 };
+    } else {
+      const sx = slotCenterX(3);
+      mesh.position.copy(localPos(sx, -1.15, 0.09));
+    }
+  }, 600);
 }
 // 调试镜头：#...&cam=3.2 把相机拉近（截图用）
 {
@@ -1652,5 +1845,6 @@ if (location.hash.includes('lit')) {         // 截图用：直接摆到已点�
 }
 
 newRound();                         // 进场就先亮出本局倍率
+spawnRailBall();                    // 进场球就坐在拉杆上（之后每局由回球槽滚回来）
 console.log(`理论 RTP ${(theoreticalRtp() * 100).toFixed(2)}%  出口数 ${SLOT_COUNT}`);
 requestAnimationFrame(animate);

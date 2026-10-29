@@ -1,7 +1,7 @@
 // 弹射轨道蒙特卡洛：随机力道 + 微小横向抖动，统计 8 个出口的落点分布
 // 用法: node src/t_mc.mjs [局数]
 import * as CANNON from 'cannon-es';
-import { CFG, buildPhysicsWorld, createBallAt, localDir, slotIndexFromX, domeConstrain, attachPegRoughness } from './layout.mjs';
+import { CFG, buildPhysicsWorld, createBallAt, localDir, slotIndexFromX, domeConstrain, laneConstrain, attachPegRoughness } from './layout.mjs';
 
 const dt = 1 / 300;
 const qInv = new CANNON.Quaternion();
@@ -31,7 +31,7 @@ for (let t = 0; t < N; t++) {
   const { world, matBall } = buildPhysicsWorld(CFG);
   const power = 0.45 + rng() * 0.55;                  // 玩家实际拉杆的力道范围
   const v0 = CFG.launchVMin + (CFG.launchVMax - CFG.launchVMin) * power;
-  const ball = createBallAt(world, CFG, matBall, CFG.railX, CFG.railBottomY + CFG.ballR + 0.01, CFG.railZ);
+  const ball = createBallAt(world, CFG, matBall, CFG.railX, CFG.railBottomY + CFG.ballR + 0.01, CFG.laneZ ?? CFG.railZ);
   const up = localDir(0, 1, 0);
   const lat = (rng() * 2 - 1) * LAT;                 // 拉杆释放的横向抖动
   const side = localDir(lat, 0, 0);
@@ -41,6 +41,7 @@ for (let t = 0; t < N; t++) {
   let done = false, slow = 0;
   for (let i = 0; i * dt < 8; i++) {
     world.step(dt);
+    laneConstrain(ball, CFG, dt);
     domeConstrain(ball, CFG);
     const l = toLocal(ball.position);
     if (l.y < -0.97 && Math.abs(l.x) < CFG.boardW / 2 - 0.02) {

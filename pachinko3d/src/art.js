@@ -76,7 +76,7 @@ export function texBackplate() {
 }
 
 export function texMarquee() {
-  return canvasTex(1024, 176, (g, w, h) => {
+  return canvasTex(1600, 208, (g, w, h) => {
     g.fillStyle = '#05070c'; g.fillRect(0, 0, w, h);
     const lg = g.createLinearGradient(0, 0, w, 0);
     lg.addColorStop(0, 'rgba(46,230,255,.20)');
@@ -87,7 +87,7 @@ export function texMarquee() {
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.shadowColor = '#2ee6ff'; g.shadowBlur = 38;
     g.fillStyle = '#dffaff';
-    g.font = '900 96px "PingFang SC",system-ui,sans-serif';
+    g.font = '900 108px "PingFang SC",system-ui,sans-serif';
     g.fillText('PACHINKO', w / 2, h / 2 + 2);
     g.shadowBlur = 0;
 
