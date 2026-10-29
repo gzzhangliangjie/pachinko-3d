@@ -12,6 +12,7 @@ import {
 } from './layout.mjs';
 import { texBackplate, texMarquee, texMult, texNum, makeMaterials, NEON, neonMat } from './art.js';
 import { drawRound, theoreticalRtp, SLOT_COUNT } from './rules.mjs';
+import { audio } from './audio.js';
 
 const GOLDFX = 0xffc020;   // 点亮出口统一金色
 const TILT = CFG.tiltDeg * Math.PI / 180;
@@ -835,7 +836,7 @@ function removeBall() {
 }
 
 function onPegHit(vel, pos) {
-  sfxPeg(vel);
+  audio.peg(vel);
   if (pos && vel > 0.8) burst(pos, 0xbfefff, 2, Math.min(1, vel / 3) * 0.4);
 }
 
@@ -876,50 +877,10 @@ scene.add(winRing);
 let ringLife = 0;
 
 // ---------------------------------------------------------------------------
-// 音效
+// 音效：全部实现在 audio.js（Web Audio 合成，无音频资源文件）
+// 浏览器要求音频必须由用户手势激活，所以所有输入事件都先 ensureAudio()
 // ---------------------------------------------------------------------------
-let ac = null;
-function ensureAudio() {
-  if (!ac) {
-    try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch { /* ignore */ }
-  }
-  if (ac && ac.state === 'suspended') ac.resume();
-}
-function tone(freq, dur, type = 'sine', vol = 0.08, slide = 0) {
-  if (!ac) return;
-  const t0 = ac.currentTime;
-  const o = ac.createOscillator();
-  const g = ac.createGain();
-  o.type = type;
-  o.frequency.setValueAtTime(freq, t0);
-  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, freq * slide), t0 + dur);
-  g.gain.setValueAtTime(0.0001, t0);
-  g.gain.exponentialRampToValueAtTime(vol, t0 + 0.008);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  o.connect(g).connect(ac.destination);
-  o.start(t0); o.stop(t0 + dur + 0.02);
-}
-function sfxPeg(v) { tone(520 + Math.min(1, v / 3) * 900, 0.055, 'triangle', 0.035); }
-function sfxChip() { tone(920 + Math.random() * 160, 0.06, 'sine', 0.05); setTimeout(() => tone(1380, 0.05, 'sine', 0.03), 30); }
-function sfxLaunch() {
-  if (!ac) return;
-  const t0 = ac.currentTime;
-  const o = ac.createOscillator(); const g = ac.createGain();
-  o.type = 'sawtooth';
-  o.frequency.setValueAtTime(160, t0);
-  o.frequency.exponentialRampToValueAtTime(760, t0 + 0.2);
-  g.gain.setValueAtTime(0.0001, t0);
-  g.gain.exponentialRampToValueAtTime(0.05, t0 + 0.02);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.3);
-  o.connect(g).connect(ac.destination); o.start(t0); o.stop(t0 + 0.32);
-}
-function sfxWin(mult) {
-  const base = mult >= 10 ? 523 : mult >= 6 ? 466 : 392;
-  [0, 4, 7, 12].forEach((semi, i) => {
-    setTimeout(() => tone(base * Math.pow(2, semi / 12), 0.26, 'sine', 0.075), i * 85);
-  });
-}
-function sfxLose() { tone(130, 0.22, 'sine', 0.06, 0.6); }
+function ensureAudio() { audio.unlock(); }
 
 // ---------------------------------------------------------------------------
 // 状态 / UI
@@ -956,10 +917,10 @@ const ui = {
   fireLabel: document.getElementById('fireLabel'),
   fireSub: document.getElementById('fireSub'),
   autoBtn: document.getElementById('autoBtn'),
+  sfxBtn: document.getElementById('sfxBtn'),
   helpBtn: document.getElementById('helpBtn'),
   closeSheet: document.getElementById('closeSheet'),
   sheet: document.getElementById('sheet'),
-  live: document.getElementById('live'),
   histList: document.getElementById('histList'),
   winFx: document.getElementById('winFx'),
   winMult: document.getElementById('winMult'),
@@ -987,7 +948,7 @@ function refreshHud() {
   ui.rtp.style.color = rtp === null ? '' : rtp >= 96 ? 'var(--green)' : '#ffb56b';
   ui.fireBtn.disabled = state.phase === 'loading' || state.phase === 'dropping' || state.phase === 'resolve';
   switch (state.phase) {
-    case 'idle': setBtnLabel('投币', 'SPACE'); break;
+    case 'idle': setBtnLabel('下注', 'SPACE'); break;
     case 'loading': setBtnLabel('装填中…', '请稍候'); break;
     case 'armed': setBtnLabel('拉杆', '往下拖再松手'); break;
     case 'dropping': setBtnLabel('下落中…', '---'); break;
@@ -1004,6 +965,7 @@ function buildBetButtons() {
     b.textContent = v;
     b.onclick = () => {
       ensureAudio();
+      audio.click();
       if (state.phase !== 'idle') return;
       state.stake = v;
       buildBetButtons();
@@ -1060,8 +1022,8 @@ function lightRound() {
   for (let i = 0; i < slots.length; i++) setSlotLed(i, false, 0);
   const r = state.round;
   for (const i of r.slots) setSlotLed(i, true, r.mult);
-  ui.multView.textContent = `${r.litCount}口 ×${r.mult}`;
-  ui.multView.style.fontSize = '17px';
+  ui.multView.textContent = `×${r.mult}`;
+  ui.multView.style.fontSize = '';
   drawMultPanel(r.mult, r.litCount, true);
 }
 
@@ -1069,7 +1031,7 @@ function lightRound() {
 function newRound() {
   state.round = drawRound();
   lightRound();
-  ui.live.innerHTML = `本局点亮 <b>${state.round.litCount}</b> 个出口 · 倍率 <b>×${state.round.mult}</b> · 选好筹码投币`;
+  audio.round(state.round.litCount);
   refreshHud();
 }
 
@@ -1099,7 +1061,6 @@ function insertChips(instant = false) {
   chipSpawnT = Math.min(0.14, Math.max(0.028, 2.2 / state.stake));
   drawReadout(0, state.stake);
   ui.stakeView.textContent = '0';
-  ui.live.innerHTML = `正在装填 <b>${state.stake}</b> 筹码…`;
   refreshHud();
 }
 
@@ -1107,7 +1068,6 @@ function armRound() {
   state.phase = 'armed';
   state.boost = null;
   lightRound();
-  ui.live.innerHTML = `点亮 <b>${state.round.litCount}</b> 个出口 · 基础倍率 <b>×${state.round.mult}</b> · 抓住右下角拉杆往下拉，松手弹出`;
   refreshHud();
 }
 
@@ -1152,8 +1112,7 @@ function launch(instant = false) {
   }
   ballBody.angularVelocity.set(0, 0, -v0 / CFG.ballR * 0.2);
   state.phase = 'dropping';
-  sfxLaunch();
-  ui.live.innerHTML = '弹射！';
+  audio.launch(state.power);
   refreshHud();
 }
 
@@ -1161,6 +1120,7 @@ function resolveSlot(idx) {
   state.phase = 'resolve';
   state.rounds++;
   state.landings.push(idx);
+  audio.land(ballBody ? ballBody.velocity.length() : 1);
 
   const r = state.round;
   const hit = r && r.slots.includes(idx);
@@ -1169,7 +1129,7 @@ function resolveSlot(idx) {
   state.chips += gain;
 
   if (hit) {
-    sfxWin(r.mult);
+    audio.win(r.mult);
     ui.winMult.textContent = '×' + r.mult;
     ui.winGain.textContent = '+' + fmt(gain);
     ui.winSub.textContent = `第 ${idx + 1} 号出口 · 投注 ${state.stake}`;
@@ -1186,11 +1146,9 @@ function resolveSlot(idx) {
     burst(local, 0xffe1a0, 14, 1.1);
     shake = 0.055;
     flash = 0.5;
-    ui.live.innerHTML = `命中 ×${r.mult} · 赢得 <b>${fmt(gain)}</b>`;
   } else {
-    sfxLose();
+    audio.lose();
     shake = 0.018;
-    ui.live.innerHTML = '未命中 · 输 <b>' + state.stake + '</b>';
   }
 
   if (ballBody) { world.removeBody(ballBody); ballBody = null; }
@@ -1278,13 +1236,32 @@ window.addEventListener('pointerup', () => {
 
 ui.autoBtn.onclick = () => {
   ensureAudio();
+  audio.click();
   if (state.auto > 0) { state.auto = 0; ui.autoBtn.classList.remove('on'); return; }
   state.auto = 10;
   ui.autoBtn.classList.add('on');
   autoStep();
 };
-ui.helpBtn.onclick = () => ui.sheet.classList.add('show');
-ui.closeSheet.onclick = () => ui.sheet.classList.remove('show');
+ui.helpBtn.onclick = () => { audio.click(); ui.sheet.classList.add('show'); };
+ui.closeSheet.onclick = () => { audio.click(); ui.sheet.classList.remove('show'); };
+
+// ---- 音效开关（记忆到 localStorage，也可以按 M）----
+function syncSfxBtn() {
+  const off = audio.isMuted();
+  if (ui.sfxBtn) {
+    ui.sfxBtn.textContent = off ? '音效 关' : '音效 开';
+    ui.sfxBtn.classList.toggle('on', off);
+  }
+}
+if (ui.sfxBtn) {
+  ui.sfxBtn.onclick = () => {
+    ensureAudio();
+    audio.toggle();
+    syncSfxBtn();
+    audio.click();
+  };
+}
+syncSfxBtn();
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Space') {
     e.preventDefault();
@@ -1293,6 +1270,7 @@ window.addEventListener('keydown', (e) => {
     if (state.phase === 'idle') insertChips();
     else if (state.phase === 'armed') startCharge();
   }
+  if (e.code === 'KeyM') { ensureAudio(); audio.toggle(); syncSfxBtn(); audio.click(); }
   if (e.code === 'Escape') ui.sheet.classList.remove('show');
 });
 window.addEventListener('keyup', (e) => {
@@ -1380,7 +1358,7 @@ function animate(now) {
         chipLoaded += CHIP_PER_BALL;
         drawReadout(chipLoaded, state.stake);
         ui.stakeView.textContent = fmt(chipLoaded);
-        sfxChip();
+        audio.chip(chipLoaded);
         burst(localPos(RAMP.cx, CHIP_WINDOW.bot + 0.09, chipBalls.glassZ), 0xffd76a, 3, 0.4);
         if (chipLoaded >= state.stake) armRound();
       }
@@ -1396,6 +1374,7 @@ function animate(now) {
     }
     ui.powerFill.style.height = (state.power * 100).toFixed(0) + '%';
     ui.powerFill.style.background = state.power > 0.75 ? 'linear-gradient(180deg,#ff7bbe,#ff2f87)' : 'linear-gradient(180deg,#aef4ff,#2ee6ff)';
+    audio.dragTick(state.power);
     plungerPull = state.power;
     knobVel = 0;
   } else if (plungerPull > -0.24) {
@@ -1443,7 +1422,6 @@ function animate(now) {
         ballBody.position.set(p0.x, p0.y, p0.z);
         state.phase = 'armed';
         state.boost = null;
-        ui.live.innerHTML = '力度不足 · <b>再拉一次</b>';
         refreshHud();
         return;
       }
