@@ -430,17 +430,30 @@ let springMesh = null;
 // 滑道视觉路径：直段之后沿顶部圆弧顺势上延一段，让墙壁/玻璃和弧面板接成一体
 // （只用于可视化；物理墙和运动学引导仍用 railPath，不改变已调好的弹射参数）
 function railVisualPath(cfg = CFG) {
-  const pts = railPath(cfg).map((q) => ({ p: [...q.p], t: [...q.t] }));
-  const last = pts[pts.length - 1];
-  const cx = cfg.domeCx, cy = cfg.domeCy;
-  const r0 = Math.hypot(last.p[0] - cx, last.p[1] - cy);
-  let a = Math.atan2(last.p[1] - cy, last.p[0] - cx);
+  const pts = [];
+  const n1 = 14;
+  const zBot = cfg.laneZ ?? cfg.railZ;
   const zTop = cfg.laneTopZ ?? cfg.railZ;
-  for (let i = 0; i < 14; i++) {
-    a += 0.035;
-    const x = cx + r0 * Math.cos(a), y = cy + r0 * Math.sin(a);
-    pts.push({ p: [x, y, zTop], t: [-Math.sin(a), Math.cos(a), 0] });
-    if (y > 1.05) break;
+  // 直段：z 从 laneZ 渐变到 laneTopZ（与 laneConstrain 的插值一致，消除扭折）
+  for (let i = 0; i <= n1; i++) {
+    const f = i / n1;
+    const y = cfg.railBottomY + (cfg.railTopY - cfg.railBottomY) * f;
+    pts.push({ p: [cfg.railX, y, zBot + (zTop - zBot) * f], t: [0, 1, 0], arc: false });
+  }
+  // 弧段：外壁沿顶部圆弧面板的镀铬棱线顺势上延 —— 滑道在这里明显汇入圆弧
+  const cx = cfg.domeCx, cy = cfg.domeCy;
+  const last = pts[pts.length - 1];
+  const a0 = Math.atan2(last.p[1] - cy, last.p[0] - cx);
+  const r0 = Math.hypot(last.p[0] - cx, last.p[1] - cy);
+  const rT = cfg.domeR + 0.014 - 0.0825;      // 外壁（偏移 0.0825）正好落在镀铬棱线半径上
+  const aEnd = Math.PI / 2 + 0.22;            // 一路延伸到接近拱顶
+  const n2 = 20;
+  for (let i = 1; i <= n2; i++) {
+    const f = i / n2;
+    const ang = a0 + (aEnd - a0) * f;
+    const r = r0 + (rT - r0) * Math.min(1, f * 3);
+    const x = cx + r * Math.cos(ang), y = cy + r * Math.sin(ang);
+    pts.push({ p: [x, y, zTop], t: [-Math.sin(ang), Math.cos(ang), 0], arc: true });
   }
   return pts;
 }
@@ -455,11 +468,24 @@ const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
     const mx = (a.p[0] + b.p[0]) / 2, my = (a.p[1] + b.p[1]) / 2, mz = (a.p[2] + b.p[2]) / 2;
     const len = Math.hypot(b.p[0] - a.p[0], b.p[1] - a.p[1]) + 0.03;
     const ang = Math.atan2(a.t[1], a.t[0]);
+    const lx = a.t[1], ly = -a.t[0];
+    if (a.arc) {
+      // 弧段：只有外侧壁（镀铬），贴着弧面板棱线顺势上延；一条品红霓虹
+      // 描边跟着走（与右侧立柱霓虹条同色），滑道汇入圆弧一目了然
+      const ow = new THREE.Mesh(new THREE.BoxGeometry(len, 0.014, 0.075), M.chrome);
+      ow.position.set(mx + lx * 0.0825, my + ly * 0.0825, mz);
+      ow.rotation.z = ang;
+      machine.add(ow);
+      const acc = new THREE.Mesh(new THREE.BoxGeometry(len, 0.009, 0.010), neonMat(NEON.magenta, 1.8));
+      acc.position.set(mx + lx * 0.088, my + ly * 0.088, mz + 0.042);
+      acc.rotation.z = ang;
+      machine.add(acc);
+      continue;
+    }
     const back = new THREE.Mesh(new THREE.BoxGeometry(len, 0.10, 0.012), M.dark);
     back.position.set(mx, my, mz - 0.062);
     back.rotation.z = ang;
     machine.add(back);
-    const lx = a.t[1], ly = -a.t[0];
     for (const s of [-1, 1]) {
       const wallV = new THREE.Mesh(new THREE.BoxGeometry(len, 0.014, 0.075), M.steel);
       wallV.position.set(mx + lx * s * 0.0825, my + ly * s * 0.0825, mz);
@@ -530,10 +556,14 @@ const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
   {
     const { domeCx, domeCy, domeR } = CFG;
     const clamp = (v) => Math.max(-1, Math.min(1, v));
-    // 视觉两端收进机头轮廓内（机头半宽 1.02），物理约束范围(domeXRight/XLeft)不受影响
-    const VIS_XR = 1.025, VIS_XL = -1.025;   // 一直铺到机头立柱，不再凭空断掉
-    const aR = Math.acos(clamp((VIS_XR - domeCx) / domeR));
-    const aL = Math.acos(clamp((VIS_XL - domeCx) / domeR));
+    // 两端角度按最外圈元素（霓虹描边 domeR+0.046）收进机头轮廓（半宽 1.02）内，
+    // 否则外圈的面板/镀铬线/霓虹描边会超出机身边缘，在左端露出一个斜切楔形块。
+    // 物理约束范围(domeXRight/XLeft)不受影响。
+    const OUTER = domeR + 0.046;
+    const aR = Math.acos(clamp((1.005 - domeCx) / OUTER));
+    const aL = Math.acos(clamp((-1.005 - domeCx) / OUTER));
+    const VIS_XR = domeCx + (domeR + 0.020) * Math.cos(aR);
+    const VIS_XL = domeCx + (domeR + 0.020) * Math.cos(aL);
     const segs = 56;
     for (let i = 0; i < segs; i++) {
       const a = aR + (aL - aR) * (i + 0.5) / segs;
@@ -589,10 +619,11 @@ const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
     }
   }
 
-  // 轨道玻璃罩（直滑道段 + 顺势上延的弧段）
+  // 轨道玻璃罩（只铺直滑道段；弧段由弧面板本体承担）
   {
     const pts = railVisualPath(CFG);
     for (let i = 0; i < pts.length - 1; i++) {
+      if (pts[i].arc) continue;
       const a = pts[i], b = pts[i + 1];
       const mx = (a.p[0] + b.p[0]) / 2, my = (a.p[1] + b.p[1]) / 2, mz = (a.p[2] + b.p[2]) / 2;
       const len = Math.hypot(b.p[0] - a.p[0], b.p[1] - a.p[1]) + 0.03;
