@@ -194,15 +194,22 @@ function box(w, h, d, mat) {
   }
 
   // 左右扬声器格栅：填满机头两侧剩下的空板
+  // （横栅条样式，避免"黑圆+发光点"被看成一颗悬空的球）
   for (const s of [-1, 1]) {
+    const gx = s * 0.92, gy = 1.41;
     const grille = new THREE.Mesh(new THREE.CircleGeometry(0.062, 32), M.dark);
-    grille.position.set(s * 0.92, 1.41, FRONT_Z + 0.002);
+    grille.position.set(gx, gy, FRONT_Z + 0.002);
     g.add(grille);
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.066, 0.008, 8, 36), M.chrome);
-    ring.position.set(s * 0.92, 1.41, FRONT_Z + 0.002);
+    ring.position.set(gx, gy, FRONT_Z + 0.002);
     g.add(ring);
-    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.015, 16), neonMat(s < 0 ? NEON.cyan : NEON.magenta, 1.3));
-    dot.position.set(s * 0.92, 1.41, FRONT_Z + 0.004);
+    for (let i = -1; i <= 1; i++) {          // 三条横栅条，明确的喇叭孔
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.098, 0.010, 0.006), M.steel);
+      bar.position.set(gx, gy + i * 0.028, FRONT_Z + 0.005);
+      g.add(bar);
+    }
+    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.007, 12), neonMat(s < 0 ? NEON.cyan : NEON.magenta, 0.9));
+    dot.position.set(gx, gy - 0.042, FRONT_Z + 0.004);   // 指示灯挪到格栅下缘，不再居中像球
     g.add(dot);
   }
 
@@ -420,11 +427,29 @@ let plunger = null;
 let plungerKnob = null;
 let plungerHit = null;
 let springMesh = null;
+// 滑道视觉路径：直段之后沿顶部圆弧顺势上延一段，让墙壁/玻璃和弧面板接成一体
+// （只用于可视化；物理墙和运动学引导仍用 railPath，不改变已调好的弹射参数）
+function railVisualPath(cfg = CFG) {
+  const pts = railPath(cfg).map((q) => ({ p: [...q.p], t: [...q.t] }));
+  const last = pts[pts.length - 1];
+  const cx = cfg.domeCx, cy = cfg.domeCy;
+  const r0 = Math.hypot(last.p[0] - cx, last.p[1] - cy);
+  let a = Math.atan2(last.p[1] - cy, last.p[0] - cx);
+  const zTop = cfg.laneTopZ ?? cfg.railZ;
+  for (let i = 0; i < 14; i++) {
+    a += 0.035;
+    const x = cx + r0 * Math.cos(a), y = cy + r0 * Math.sin(a);
+    pts.push({ p: [x, y, zTop], t: [-Math.sin(a), Math.cos(a), 0] });
+    if (y > 1.05) break;
+  }
+  return pts;
+}
+
 const SPRING_LEN = 0.17;                 // 弹簧自然长度
 const PLUNGE = { x: CFG.railX, y: CFG.railBottomY + 0.005, z: CFG.laneZ, travel: 0.15 };
 const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
 {
-  const pts = railPath(CFG);
+  const pts = railVisualPath(CFG);
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1];
     const mx = (a.p[0] + b.p[0]) / 2, my = (a.p[1] + b.p[1]) / 2, mz = (a.p[2] + b.p[2]) / 2;
@@ -506,7 +531,7 @@ const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
     const { domeCx, domeCy, domeR } = CFG;
     const clamp = (v) => Math.max(-1, Math.min(1, v));
     // 视觉两端收进机头轮廓内（机头半宽 1.02），物理约束范围(domeXRight/XLeft)不受影响
-    const VIS_XR = 0.96, VIS_XL = -0.96;
+    const VIS_XR = 1.025, VIS_XL = -1.025;   // 一直铺到机头立柱，不再凭空断掉
     const aR = Math.acos(clamp((VIS_XR - domeCx) / domeR));
     const aL = Math.acos(clamp((VIS_XL - domeCx) / domeR));
     const segs = 56;
@@ -564,9 +589,9 @@ const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
     }
   }
 
-  // 轨道玻璃罩（直滑道段）
+  // 轨道玻璃罩（直滑道段 + 顺势上延的弧段）
   {
-    const pts = railPath(CFG);
+    const pts = railVisualPath(CFG);
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i], b = pts[i + 1];
       const mx = (a.p[0] + b.p[0]) / 2, my = (a.p[1] + b.p[1]) / 2, mz = (a.p[2] + b.p[2]) / 2;

@@ -30,7 +30,7 @@ export const CFG = {
   railX: 0.95,          // 滑道中心 x
   railZ: 0.055,         // 弧面层（盘面碰撞平面）z
   laneZ: 0.245,         // 滑道底部所在 z：移到机头立柱前方，弹射全程可见
-  laneTopZ: 0.075,      // 滑道上端 z：一路斜着回到弧面层，出滑道时正好接上圆弧
+  laneTopZ: 0.055,      // 滑道上端 z：一路斜着回到弧面层，出滑道时正好接上圆弧
   railBottomY: -1.30,   // 滑道底部（装球处）
   railTopY: 0.78,       // 滑道上端：停在圆弧接管处之下（再高就会把球夹住）
   railChHalf: 0.075,    // 通道半宽
@@ -271,7 +271,11 @@ export function laneConstrain(ball, cfg = CFG, dt = 1 / 300) {
   qi.vmult(ball.position, p);
   if (Math.abs(p.x - cfg.railX) > cfg.railChHalf) return;
   if (p.y < cfg.railBottomY - 0.16 || p.y > cfg.railTopY + 0.03) return;
-  p.z += (zLane - p.z) * Math.min(1, dt * 30);
+  // z 目标随高度插值：底部在立柱前方(laneZ)，上端收回弧面层(laneTopZ)
+  const zTop = cfg.laneTopZ ?? zLane;
+  const f = Math.max(0, Math.min(1, (p.y - cfg.railBottomY) / (cfg.railTopY - cfg.railBottomY)));
+  const zTarget = zLane + (zTop - zLane) * f;
+  p.z += (zTarget - p.z) * Math.min(1, dt * 30);
   q.vmult(p, ball.position);
   const vl = new CANNON.Vec3();
   qi.vmult(ball.velocity, vl);

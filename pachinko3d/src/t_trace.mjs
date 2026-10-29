@@ -10,7 +10,7 @@ const toLocal = (p) => { const o = new CANNON.Vec3(); qInv.vmult(p, o); return o
 const power = Number(process.argv[2] ?? 1);
 const { world, matBall } = buildPhysicsWorld(CFG);
 const v0 = CFG.launchVMin + (CFG.launchVMax - CFG.launchVMin) * power;
-const ball = createBallAt(world, CFG, matBall, CFG.railX, CFG.railBottomY + CFG.ballR + 0.01, CFG.railZ);
+const ball = createBallAt(world, CFG, matBall, CFG.railX, CFG.railBottomY + CFG.ballR + 0.01, CFG.laneZ ?? CFG.railZ);
 const up = localDir(0, 1, 0);
 ball.velocity.set(up.x * v0, up.y * v0, up.z * v0);
 
@@ -29,7 +29,7 @@ for (let i = 0; i * dt < 6; i++) {
 // 联系人诊断：重跑一次，打印 57/58 帧的接触
 {
   const w2 = buildPhysicsWorld(CFG);
-  const b2 = createBallAt(w2.world, CFG, w2.matBall, CFG.railX, CFG.railBottomY + CFG.ballR + 0.01, CFG.railZ);
+  const b2 = createBallAt(w2.world, CFG, w2.matBall, CFG.railX, CFG.railBottomY + CFG.ballR + 0.01, CFG.laneZ ?? CFG.railZ);
   const u2 = localDir(0, 1, 0);
   b2.velocity.set(u2.x * v0, u2.y * v0, u2.z * v0);
   for (let i = 0; i * dt < 6; i++) {

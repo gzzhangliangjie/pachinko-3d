@@ -18,7 +18,7 @@ function shot(power, verbose = false) {
   const { world, matBall } = buildPhysicsWorld(CFG);
   const v0 = CFG.launchVMin + (CFG.launchVMax - CFG.launchVMin) * power;
   const ball = createBallAt(world, CFG, matBall,
-    CFG.railX, CFG.railBottomY + CFG.ballR + 0.01, CFG.railZ, 0, 0, 0);
+    CFG.railX, CFG.railBottomY + CFG.ballR + 0.01, CFG.laneZ ?? CFG.railZ, 0, 0, 0);
   const up = localDir(0, 1, 0);
   ball.velocity.set(up.x * v0, up.y * v0, up.z * v0);
 
