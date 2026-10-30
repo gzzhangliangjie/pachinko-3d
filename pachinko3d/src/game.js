@@ -999,22 +999,24 @@ const sparkles = [];
 const multPanel = { tex: null, ctx: null };
 {
   const c = document.createElement('canvas');
-  c.width = 512; c.height = 256;
+  c.width = 512; c.height = 424;
   multPanel.ctx = c.getContext('2d');
   multPanel.tex = new THREE.CanvasTexture(c);
   multPanel.tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.MeshBasicMaterial({ map: multPanel.tex, transparent: true });
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.22), mat);
-  m.position.set(0.60, 1.45, 0.192);
+  // 与左侧装填窗同高：窗体 y 1.234~1.616（高 0.382），倍率屏顶底对齐
+  const my = (1.234 + 1.616) / 2;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.362), mat);
+  m.position.set(0.60, my, 0.222);
   machine.add(m);
   // 大屏外框
-  const fw = 0.46, fh = 0.24, t = 0.016;
+  const fw = 0.46, fh = 0.382, t = 0.016;
   for (const [w2, h2, x2, y2] of [
-    [fw, t, 0.60, 1.45 + fh / 2], [fw, t, 0.60, 1.45 - fh / 2],
-    [t, fh, 0.60 - fw / 2, 1.45], [t, fh, 0.60 + fw / 2, 1.45],
+    [fw, t, 0.60, my + fh / 2], [fw, t, 0.60, my - fh / 2],
+    [t, fh, 0.60 - fw / 2, my], [t, fh, 0.60 + fw / 2, my],
   ]) {
     const b = new THREE.Mesh(new THREE.BoxGeometry(w2, h2, 0.03), M.chrome);
-    b.position.set(x2, y2, 0.186);
+    b.position.set(x2, y2, 0.216);
     machine.add(b);
   }
 }
@@ -1022,7 +1024,7 @@ const multPanel = { tex: null, ctx: null };
 function drawMultPanel(mult, litCount, on) {
   const g = multPanel.ctx;
   if (!g) return;
-  const W = 512, H = 256;
+  const W = 512, H = 424;
   g.clearRect(0, 0, W, H);
   const col = !on ? '#3a4a5e' : mult >= 10 ? '#ff2f87' : mult >= 6 ? '#ffcc45' : '#2ee6ff';
   const txt = !on ? '#8fa4b8' : mult >= 10 ? '#ffd7e8' : mult >= 6 ? '#fff3c4' : '#dcfbff';
@@ -1038,13 +1040,13 @@ function drawMultPanel(mult, litCount, on) {
 
   g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillStyle = col;
-  g.font = '700 34px "PingFang SC",system-ui,sans-serif';
-  g.fillText(on ? `点亮 ${litCount} 个出口` : '等待投币', W / 2, 48);
+  g.font = '700 44px "PingFang SC",system-ui,sans-serif';
+  g.fillText(on ? `点亮 ${litCount} 个出口` : '等待投币', W / 2, 92);
 
   g.fillStyle = txt;
-  g.font = '900 132px "PingFang SC",system-ui,sans-serif';
+  g.font = '900 200px "PingFang SC",system-ui,sans-serif';
   if (on) { g.shadowColor = col; g.shadowBlur = 30; }
-  g.fillText(on ? '×' + mult : '× ?', W / 2, 150);
+  g.fillText(on ? '×' + mult : '× ?', W / 2, 268);
   g.shadowBlur = 0;
   multPanel.tex.needsUpdate = true;
 }
