@@ -12,3 +12,5 @@ dom*.html
 scan_dom*.html
 gltest.html
 user_ref.*
+analyze[0-9]*.html
+a[0-9]*.html
