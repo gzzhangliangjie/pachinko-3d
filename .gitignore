@@ -5,3 +5,5 @@ repos/
 .workbuddy/
 *.log
 old_*.html
+.edgeprof*/
+

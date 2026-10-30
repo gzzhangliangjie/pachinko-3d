@@ -75,24 +75,31 @@ export function texBackplate() {
   });
 }
 
-export function texMarquee() {
+export function texMarquee(glow = false) {
   return canvasTex(1600, 208, (g, w, h) => {
-    g.fillStyle = '#05070c'; g.fillRect(0, 0, w, h);
-    const lg = g.createLinearGradient(0, 0, w, 0);
-    lg.addColorStop(0, 'rgba(46,230,255,.20)');
-    lg.addColorStop(0.5, 'rgba(255,47,135,.20)');
-    lg.addColorStop(1, 'rgba(46,230,255,.20)');
-    g.fillStyle = lg; g.fillRect(0, 0, w, h);
+    if (glow) {
+      // 发光图：底板纯黑（完全不发光），只有文字亮。
+      // 这样招牌底板保持机身面板本色，不会整块被 emissive 提亮成灰白。
+      g.fillStyle = '#000000'; g.fillRect(0, 0, w, h);
+    } else {
+      // albedo：底板用机身面板同色（M.body = 0x0e131c），只用中性高光做一点清漆质感
+      g.fillStyle = '#0e131c'; g.fillRect(0, 0, w, h);
+      const lg = g.createLinearGradient(0, 0, w, 0);
+      lg.addColorStop(0, 'rgba(255,255,255,.04)');
+      lg.addColorStop(0.5, 'rgba(255,255,255,.10)');
+      lg.addColorStop(1, 'rgba(255,255,255,.04)');
+      g.fillStyle = lg; g.fillRect(0, 0, w, h);
+    }
 
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.shadowColor = '#2ee6ff'; g.shadowBlur = 38;
+    g.shadowColor = '#2ee6ff'; g.shadowBlur = glow ? 44 : 34;
     g.fillStyle = '#dffaff';
     g.font = '900 108px "PingFang SC",system-ui,sans-serif';
     g.fillText('PACHINKO', w / 2, h / 2 + 2);
     g.shadowBlur = 0;
 
-    g.strokeStyle = 'rgba(46,230,255,.55)'; g.lineWidth = 3;
-    g.beginPath(); g.moveTo(40, h - 8); g.lineTo(w - 40, h - 8); g.stroke();
+    // 招牌底板不再画任何横线/描边装饰：机头面板要干净，
+    // 多出来的横线会被误读成球道或电路走线
   });
 }
 

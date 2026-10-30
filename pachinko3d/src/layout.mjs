@@ -29,8 +29,10 @@ export const CFG = {
   // ---- 右侧弹射轨道：一条竖直的直滑道（完全没有弯）----
   railX: 0.95,          // 滑道中心 x
   railZ: 0.055,         // 弧面层（盘面碰撞平面）z
-  laneZ: 0.245,         // 滑道底部所在 z：移到机头立柱前方，弹射全程可见
-  laneTopZ: 0.055,      // 滑道上端 z：一路斜着回到弧面层，出滑道时正好接上圆弧
+  // 滑道全程同一 z（= railZ 弧面层），不斜插：球从发射到贴弧都在同一个平面里走，
+  // 出滑道直接接上圆弧，没有前后跳变。可见性由右立柱开槽解决，不再靠把滑道挪到立柱前面。
+  laneZ: 0.055,         // 滑道底部所在 z（= railZ）
+  laneTopZ: 0.055,      // 滑道上端 z（= railZ，全程同一平面）
   railBottomY: -1.30,   // 滑道底部（装球处）
   railTopY: 0.78,       // 滑道上端：停在圆弧接管处之下（再高就会把球夹住）
   railChHalf: 0.075,    // 通道半宽
@@ -264,15 +266,14 @@ export function createBallAt(world, cfg, matBall, lx, ly, lz, vx = 0, vy = 0, vz
 /** 球贴着滑道中心线（z = laneZ）：解析约束，避免实体挡板在高速下撞停球 */
 export function laneConstrain(ball, cfg = CFG, dt = 1 / 300) {
   const zLane = cfg.laneZ ?? cfg.railZ;
-  if (zLane === cfg.railZ) return;
+  const zTop = cfg.laneTopZ ?? zLane;
   const q = tiltQuat(cfg);
   const qi = new CANNON.Quaternion(-q.x, -q.y, -q.z, q.w);
   const p = new CANNON.Vec3();
   qi.vmult(ball.position, p);
   if (Math.abs(p.x - cfg.railX) > cfg.railChHalf) return;
   if (p.y < cfg.railBottomY - 0.16 || p.y > cfg.railTopY + 0.03) return;
-  // z 目标随高度插值：底部在立柱前方(laneZ)，上端收回弧面层(laneTopZ)
-  const zTop = cfg.laneTopZ ?? zLane;
+  // z 目标：laneZ == laneTopZ 时是恒定平面（滑道不斜插），否则随高度插值
   const f = Math.max(0, Math.min(1, (p.y - cfg.railBottomY) / (cfg.railTopY - cfg.railBottomY)));
   const zTarget = zLane + (zTop - zLane) * f;
   p.z += (zTarget - p.z) * Math.min(1, dt * 30);

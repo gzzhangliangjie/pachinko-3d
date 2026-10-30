@@ -153,30 +153,78 @@ function box(w, h, d, mat) {
   g.add(backPanel);
 
   for (const s of [-1, 1]) {
-    const col = box(COL_W, OUT_H, FRONT_Z - BACK_Z, M.body);
-    col.position.set(s * (OPEN_W / 2 + COL_W / 2), 0, (FRONT_Z + BACK_Z) / 2);
-    g.add(col);
-
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.012, OUT_H * 0.82, 0.012), neonMat(s < 0 ? NEON.cyan : NEON.magenta, 2.6));
-    strip.position.set(s * (OPEN_W / 2 + COL_W * 0.5), 0, FRONT_Z + 0.004);
-    g.add(strip);
-
-    const strip2 = new THREE.Mesh(new THREE.BoxGeometry(0.006, OUT_H * 0.5, 0.008), neonMat(0xffffff, 1.2));
-    strip2.position.set(s * (OPEN_W / 2 + COL_W * 0.85), 0, FRONT_Z + 0.002);
-    g.add(strip2);
+    const colX = s * (OPEN_W / 2 + COL_W / 2);
+    // 立柱上的竖直霓虹条已删：右侧那条正好压在下面的弧形槽口上，会挡住露出来的弧线
+    if (s > 0) {
+      // 【物理 == 视觉】右立柱开一条贯通槽：球从发射到贴弧落盘，整段轨道都必须看得见。
+      // 滑道 z 从 laneZ=0.245(立柱前) 斜收到 laneTopZ=0.055(钻进机身)，y>-0.59 之后就藏到
+      // 立柱后面；球出滑道贴弧那段（x 0.95 -> 0.85）同样在立柱后。这里沿轨道把立柱挖开：
+      //   竖槽(球道段) + 顶部弧形槽(贴弧段) 合成一个贯通的孔，弧面带整条露出来。
+      // 立柱 x 位置不动、物理一行不动，只挖掉挡住轨道的机身材料。
+      const cx0 = CFG.domeCx, cy0 = CFG.domeCy;
+      const rO = CFG.domeR + 0.05;                    // 外弧：包住弧面带最外圈(1.406)
+      const xL = OPEN_W / 2 + 0.018;                  // 槽左：留 18mm 内框条，机头仍有窗框
+      const xR = OUT_W / 2 - 0.0055;                  // 槽右：差 5.5mm 到机身外缘（不与外形共线）
+      const yBot = CFG.railBottomY - 0.06;            // 槽底：一路开到滑道装球位，整条弹射轨道都看得见
+      const cl = (v) => Math.max(-1, Math.min(1, v));
+      const aS = Math.acos(cl((xR - cx0) / rO));
+      const aE = Math.acos(cl((xL - cx0) / rO));
+      const N = 24;
+      // 槽轮廓（世界坐标）：底边 -> 右侧壁 -> 顶部沿外弧 -> 左侧壁闭合
+      const outline = [[xL, yBot], [xR, yBot], [xR, cy0 + rO * Math.sin(aS)]];
+      for (let i = 0; i <= N; i++) {
+        const a = aS + (aE - aS) * i / N;
+        outline.push([cx0 + rO * Math.cos(a), cy0 + rO * Math.sin(a)]);
+      }
+      const shp = new THREE.Shape();
+      const hw = COL_W / 2, hh = OUT_H / 2;
+      shp.moveTo(-hw, -hh); shp.lineTo(hw, -hh); shp.lineTo(hw, hh); shp.lineTo(-hw, hh); shp.closePath();
+      const hole = new THREE.Path();
+      hole.moveTo(outline[0][0] - colX, outline[0][1]);
+      for (let i = 1; i < outline.length; i++) hole.lineTo(outline[i][0] - colX, outline[i][1]);
+      hole.closePath();
+      shp.holes.push(hole);
+      const colR = new THREE.Mesh(new THREE.ExtrudeGeometry(shp, { depth: FRONT_Z - BACK_Z, bevelEnabled: false }), M.body);
+      colR.position.set(colX, 0, BACK_Z);
+      colR.castShadow = true; colR.receiveShadow = true;
+      g.add(colR);
+      // 槽衬底：挖开后背后不能是空的，按同一轮廓铺一块深色板（在球之后，不挡球）
+      const bs = new THREE.Shape();
+      bs.moveTo(outline[0][0], outline[0][1]);
+      for (let i = 1; i < outline.length; i++) bs.lineTo(outline[i][0], outline[i][1]);
+      bs.closePath();
+      const backing = new THREE.Mesh(new THREE.ShapeGeometry(bs), M.dark);
+      backing.position.z = 0.005;
+      machine.add(backing);
+    } else {
+      const col = box(COL_W, OUT_H, FRONT_Z - BACK_Z, M.body);
+      col.position.set(colX, 0, (FRONT_Z + BACK_Z) / 2);
+      g.add(col);
+    }
   }
 
   const header = box(OUT_W, HEADER_H, FRONT_Z - BACK_Z, M.body);
   header.position.set(0, HEADER_Y, (FRONT_Z + BACK_Z) / 2);
   g.add(header);
 
-  const deck = box(OUT_W, DECK_H, FRONT_Z - BACK_Z, M.body);
-  deck.position.set(0, DECK_Y, (FRONT_Z + BACK_Z) / 2);
-  g.add(deck);
+  // 底座右端让位给弹射滑道 + 拉杆：它们现在全程在 railZ(=0.055) 平面（不斜插），
+  // 若底座横贯到右缘，就会立一块板挡在 z=0.18、把滑道底和拉杆整个盖住。
+  // 让位区间与右立柱的贯通槽对齐（x 0.868 起），滑道/拉杆从开口里露出来。
+  {
+    const deckXR = OPEN_W / 2 + 0.018;                    // 0.868
+    const deckW = deckXR - (-OUT_W / 2);
+    const deck = box(deckW, DECK_H, FRONT_Z - BACK_Z, M.body);
+    deck.position.set((-OUT_W / 2 + deckXR) / 2, DECK_Y, (FRONT_Z + BACK_Z) / 2);
+    g.add(deck);
+  }
 
-  const marqueeMat = new THREE.MeshStandardMaterial({
-    map: texMarquee(), emissiveMap: texMarquee(), emissive: 0xffffff, emissiveIntensity: 0.85,
-    roughness: 0.35, metalness: 0.2,
+  // 招牌底板与机头面板同色同质感（M.body 那套参数），只有文字发光：
+  // emissiveMap 用底板纯黑的版本，避免整块招牌被 emissive 提亮成灰白
+  const marqueeMat = new THREE.MeshPhysicalMaterial({
+    map: texMarquee(false), emissiveMap: texMarquee(true),
+    emissive: 0xffffff, emissiveIntensity: 0.75,
+    roughness: 0.28, metalness: 0.6,
+    clearcoat: 1, clearcoatRoughness: 0.12, envMap: env, envMapIntensity: 0.5,
   });
   const marquee = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.26), marqueeMat);
   marquee.position.set(0, 1.715, FRONT_Z + 0.006);
@@ -459,7 +507,10 @@ function railVisualPath(cfg = CFG) {
 }
 
 const SPRING_LEN = 0.17;                 // 弹簧自然长度
-const PLUNGE = { x: CFG.railX, y: CFG.railBottomY + 0.005, z: CFG.laneZ, travel: 0.15 };
+// z 固定在机身前脸(0.18)之外：拉杆是外露的操作部件，必须待在机身外面。
+// 不跟随 laneZ —— 滑道已挪回 railZ 平面去掉斜插，拉杆若跟着缩进机身就会被底座挡住。
+// 球的位置另用 CFG.laneZ 定位（见 armed 段），与拉杆 z 无关。
+const PLUNGE = { x: CFG.railX, y: CFG.railBottomY + 0.005, z: 0.245, travel: 0.15 };
 const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
 {
   const pts = railVisualPath(CFG);
@@ -556,12 +607,14 @@ const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
   {
     const { domeCx, domeCy, domeR } = CFG;
     const clamp = (v) => Math.max(-1, Math.min(1, v));
-    // 两端角度按最外圈元素（霓虹描边 domeR+0.046）收进机头轮廓（半宽 1.02）内，
-    // 否则外圈的面板/镀铬线/霓虹描边会超出机身边缘，在左端露出一个斜切楔形块。
-    // 物理约束范围(domeXRight/XLeft)不受影响。
-    const OUTER = domeR + 0.046;
-    const aR = Math.acos(clamp((1.005 - domeCx) / OUTER));
-    const aL = Math.acos(clamp((-1.005 - domeCx) / OUTER));
+    // 【物理 == 视觉】弧面带两端严格对齐球真正滚过的那一段：
+    //   球心贴弧半径 lim = domeR - ballR，圆心 (domeCx, domeCy)
+    //   右端 = 球出滑道贴弧处   x = railX      极角 acos(railX / lim)
+    //   左端 = 球脱离弧面落盘处 x = domeExitX  极角 acos(domeExitX / lim)
+    // 画出来的弧 = 球真正滚过的范围，不多也不少（此前两端是按机身轮廓硬收的，与物理不符）
+    const lim = domeR - CFG.ballR;
+    const aR = Math.acos(clamp((CFG.railX - domeCx) / lim));
+    const aL = Math.acos(clamp((CFG.domeExitX - domeCx) / lim));
     const VIS_XR = domeCx + (domeR + 0.020) * Math.cos(aR);
     const VIS_XL = domeCx + (domeR + 0.020) * Math.cos(aL);
     const segs = 56;
@@ -601,21 +654,44 @@ const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
     }
 
     // 拱肩填充：把弧面板与机头横梁之间的月牙空档填实（机身同色，不再露出背板的坑）
+    // 左右铺到机身边缘：弧面带本身只画到物理端点，两侧剩下的角落由这块机身色填实
     {
       const topY = HEADER_Y - HEADER_H / 2;              // 机头横梁下缘 1.25
+      const XFR = OUT_W / 2, XFL = -OUT_W / 2;
       const shp = new THREE.Shape();
-      shp.moveTo(VIS_XR, topY);
+      shp.moveTo(XFR, topY);
       const steps = 40;
       for (let i = 0; i <= steps; i++) {
-        const x = VIS_XR - (VIS_XR - VIS_XL) * i / steps;
+        const x = XFR - (XFR - XFL) * i / steps;
         const y = domeCy + Math.sqrt(Math.max(0, (domeR + 0.028) ** 2 - x * x));  // 贴着弧面板外缘
         shp.lineTo(x, Math.min(topY, y));
       }
-      shp.lineTo(VIS_XL, topY);
+      shp.lineTo(XFL, topY);
       shp.closePath();
       const filler = new THREE.Mesh(new THREE.ShapeGeometry(shp), M.body);
       filler.position.z = 0.040;                          // 在钉子/弧面板之后、背板之前
       machine.add(filler);
+    }
+
+    // 【物理 == 视觉】槽内球道底板：右立柱开槽后，球沿弧面滚动的那一段背后要有板衬着，
+    // 否则槽里露出来的是背板黑洞。板画在球的后面（z 偏后），不遮挡球。
+    {
+      const cx0 = CFG.domeCx, cy0 = CFG.domeCy;
+      const rI = domeR - 0.10, rO2 = domeR;              // 径向 1.26 -> 1.36（覆盖球所在半径）
+      const a0 = aR;
+      const a1 = Math.acos(clamp((OPEN_W / 2 - cx0) / rO2));
+      const segs3 = 10;
+      for (let i = 0; i < segs3; i++) {
+        const am = a0 + (a1 - a0) * (i + 0.5) / segs3;
+        const step = (a1 - a0) * domeR / segs3;
+        const len = step * 1.7;
+        const q = am + Math.PI / 2;
+        const rm = (rI + rO2) / 2;
+        const plate = new THREE.Mesh(new THREE.BoxGeometry(len, (rO2 - rI), 0.05), M.dark);
+        plate.position.set(cx0 + rm * Math.cos(am), cy0 + rm * Math.sin(am), CFG.railZ - 0.07);
+        plate.rotation.z = q;
+        machine.add(plate);
+      }
     }
   }
 
