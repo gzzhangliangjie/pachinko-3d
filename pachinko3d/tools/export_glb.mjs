@@ -9,7 +9,7 @@ const MAXTEX = process.argv[3] || '2048';
 const PORT = 9333;
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const ROOT = resolve(import.meta.dirname, '..');
-const OUT = resolve(ROOT, 'dist');
+const OUT = resolve(ROOT, '..', 'models');   // 给引擎用的产物放仓库根 models/
 const PROFILE = resolve(ROOT, '.edgeprof_export');
 
 mkdirSync(OUT, { recursive: true });

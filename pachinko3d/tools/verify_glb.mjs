@@ -5,8 +5,8 @@ import { createReadStream, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 
 // 相对站点根目录（E:/pachinko-3d）；注意 Git Bash 会把以 / 开头的参数转成 Windows 路径
-const GLB = '/' + (process.argv[2] || 'dist/pachinko_machine.glb').replace(/^\/+/, '');
-const SHOT = process.argv[3] || resolve(import.meta.dirname, '..', 'dist', 'preview.png');
+const GLB = '/' + (process.argv[2] || 'models/pachinko_machine.glb').replace(/^\/+/, '');
+const SHOT = process.argv[3] || resolve(import.meta.dirname, '..', '..', 'models', 'preview_machine.png');
 const PORT = 9334;
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const ROOT = resolve(import.meta.dirname, '..');
@@ -25,7 +25,7 @@ const server = createServer((req, res) => {
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const WEB_PORT = server.address().port;
-mkdirSync(resolve(ROOT, 'dist'), { recursive: true });
+mkdirSync(resolve(ROOT, '..', 'models'), { recursive: true });
 
 const child = spawn(EDGE, [
   '--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${resolve(ROOT, '.edgeprof_verify')}`,

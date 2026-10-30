@@ -11,6 +11,7 @@ old_*.html
 pachinko3d/export.html
 pachinko3d/verify.html
 pachinko3d/dist/
+models/
 
 analyze.html
 dom*.html

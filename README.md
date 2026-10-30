@@ -43,7 +43,16 @@ node tools/export_glb.mjs machine 2048    # 导整台机器（不带地面/墙�
 node tools/export_glb.mjs scene 2048      # 导整场景
 ```
 
-产物落在 `pachinko3d/dist/`：`pachinko_machine.glb` / `pachinko_scene.glb`。第二个参数是贴图边长上限，贴图偏大时调小（如 `1024`）能显著减小体积。实现上是在 `export.html?export=machine` 里调 `GLTFExporter`，用无头 Edge 触发下载再落到 `dist/`，`export.html`、`dist/`、`.edgeprof_export/` 都是生成物，不入库。
+产物落在仓库根 `models/`：`pachinko_machine.glb` / `pachinko_scene.glb`。第二个参数是贴图边长上限，贴图偏大时调小（如 `1024`）能显著减小体积。实现上是在 `export.html?export=machine` 里调 `GLTFExporter`，用无头 Edge 触发下载再落到 `models/`，`export.html`、`models/`、`.edgeprof_export/` 都是生成物，不入库。
+
+导出后可回读校验（用 three 重新加载 glb 渲染一张图到 `models/preview_machine.png`）：
+
+```bash
+node build_verify.mjs                     # 打包 verify.html（GLTFLoader 回读页）
+node tools/verify_glb.mjs                 # 默认校验 models/pachinko_machine.glb
+```
+
+导入引擎注意：导出时默认把 InstancedMesh 摊平成普通 Mesh（避免 `EXT_mesh_gpu_instancing` 这个硬依赖扩展，部分导入器不认）；要保留实例化加 `&inst=keep`。Unity 用 glTFast / UnityGLTF 导入，UE5 直接拖入即可（glTF 是 Y-up、米制，UE 会自动转 Z-up/厘米）；`.glb` 里 PBR 材质和 PNG 贴图齐全，霓虹自发光走 emissive。
 
 ## 版本历史
 
