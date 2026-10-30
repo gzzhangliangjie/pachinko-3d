@@ -52,7 +52,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'hi
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.9;
+renderer.toneMappingExposure = 0.72;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 stage.appendChild(renderer.domElement);
@@ -74,7 +74,7 @@ scene.environment = env;
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.38, 0.45, 0.9);
+const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.26, 0.45, 0.9);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 
@@ -83,7 +83,7 @@ composer.addPass(new OutputPass());
 // ---------------------------------------------------------------------------
 scene.add(new THREE.HemisphereLight(0x7fb6ff, 0x05070c, 0.45));
 
-const keyLight = new THREE.SpotLight(0xffffff, 9, 16, 0.7, 0.5, 1.6);
+const keyLight = new THREE.SpotLight(0xffffff, 6, 16, 0.7, 0.5, 1.6);
 keyLight.position.set(0.4, 3.6, 4.0);
 keyLight.target.position.set(0, 0.1, 0);
 keyLight.castShadow = true;
@@ -91,9 +91,9 @@ keyLight.shadow.mapSize.set(1024, 1024);
 keyLight.shadow.bias = -0.0006;
 scene.add(keyLight, keyLight.target);
 
-const rimCyan = new THREE.PointLight(0x2ee6ff, 7, 7, 2);
+const rimCyan = new THREE.PointLight(0x2ee6ff, 4.5, 7, 2);
 rimCyan.position.set(-1.6, 1.2, 1.6);
-const rimPink = new THREE.PointLight(0xff2f87, 6, 7, 2);
+const rimPink = new THREE.PointLight(0xff2f87, 4, 7, 2);
 rimPink.position.set(1.7, -0.6, 1.5);
 scene.add(rimCyan, rimPink);
 
@@ -164,7 +164,8 @@ function box(w, h, d, mat) {
       const cx0 = CFG.domeCx, cy0 = CFG.domeCy;
       const rO = CFG.domeR + 0.05;                    // 外弧：包住弧面带最外圈(1.406)
       const xL = OPEN_W / 2 + 0.018;                  // 槽左：留 18mm 内框条，机头仍有窗框
-      const xR = OUT_W / 2 - 0.0055;                  // 槽右：差 5.5mm 到机身外缘（不与外形共线）
+      const xR = 0.998;                               // 槽右：留出 22mm 宽的边框腿，
+                                                      // 太窄会变成一条发亮的细白片，很扎眼
       const yBot = CFG.railBottomY - 0.06;            // 槽底：一路开到滑道装球位，整条弹射轨道都看得见
       const cl = (v) => Math.max(-1, Math.min(1, v));
       const aS = Math.acos(cl((xR - cx0) / rO));
@@ -201,6 +202,13 @@ function box(w, h, d, mat) {
       col.position.set(colX, 0, (FRONT_Z + BACK_Z) / 2);
       g.add(col);
     }
+
+    // 窗缘填缝：盘面(±0.80)到窗框之间的悬空竖缝用机身同色填实，
+    // 消掉盘面两侧多出来的灰色槽；右槽(0.868 起)不受影响，球道照常可见。
+    const gapW = OPEN_W / 2 + 0.018 - CFG.boardW / 2;   // 0.868 - 0.80 = 0.068
+    const fill = box(gapW, OPEN_H, FRONT_Z - BACK_Z, M.body);
+    fill.position.set(s * (CFG.boardW / 2 + gapW / 2), 0, (FRONT_Z + BACK_Z) / 2);
+    g.add(fill);
   }
 
   const header = box(OUT_W, HEADER_H, FRONT_Z - BACK_Z, M.body);
@@ -262,10 +270,10 @@ function box(w, h, d, mat) {
   }
 
   const bezels = [
-    [OPEN_W + 0.10, 0.035, 0, OPEN_H / 2 + 0.017],
-    [OPEN_W + 0.10, 0.035, 0, -OPEN_H / 2 - 0.017],
-    [0.035, OPEN_H + 0.07, -OPEN_W / 2 - 0.017, 0],
-    [0.035, OPEN_H + 0.07, OPEN_W / 2 + 0.017, 0],
+    [CFG.boardW + 0.07, 0.035, 0, OPEN_H / 2 + 0.017],
+    [CFG.boardW + 0.07, 0.035, 0, -OPEN_H / 2 - 0.017],
+    [0.035, OPEN_H + 0.07, -CFG.boardW / 2 - 0.0175, 0],
+    [0.035, OPEN_H + 0.07, CFG.boardW / 2 + 0.0175, 0],
   ];
   for (const [w, h, x, y] of bezels) {
     const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.035), M.chrome);
@@ -615,42 +623,48 @@ const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
     const lim = domeR - CFG.ballR;
     const aR = Math.acos(clamp((CFG.railX - domeCx) / lim));
     const aL = Math.acos(clamp((CFG.domeExitX - domeCx) / lim));
-    const VIS_XR = domeCx + (domeR + 0.020) * Math.cos(aR);
-    const VIS_XL = domeCx + (domeR + 0.020) * Math.cos(aL);
-    const segs = 56;
-    for (let i = 0; i < segs; i++) {
-      const a = aR + (aL - aR) * (i + 0.5) / segs;
-      const step = (aL - aR) * domeR / segs;
-      const len = step * 1.5;                      // 相邻板搭接，弧面没有断缝
-      const q = a + Math.PI / 2;
-      // 面板本体（薄薄一层衬在钢导轨面背后，避免在机头下缘露出一条黑带）
-      const panel = new THREE.Mesh(new THREE.BoxGeometry(len, 0.040, 0.150), M.body);
-      panel.position.set(domeCx + (domeR + 0.020) * Math.cos(a), domeCy + (domeR + 0.020) * Math.sin(a), CFG.railZ);
-      panel.rotation.z = q;
-      panel.castShadow = true;
-      machine.add(panel);
-      // 拱肩顶部的霓虹描边：把露出的深色拱肩勾一条灯线
-      const topEdge = new THREE.Mesh(new THREE.BoxGeometry(len, 0.010, 0.140), neonMat(NEON.cyan, 1.1));
-      topEdge.position.set(domeCx + (domeR + 0.046) * Math.cos(a), domeCy + (domeR + 0.046) * Math.sin(a), CFG.railZ);
-      topEdge.rotation.z = q;
-      machine.add(topEdge);
-      // 内表面（钢导轨面，球就在这上面滚）
-      const face = new THREE.Mesh(new THREE.BoxGeometry(len, 0.010, 0.126), M.steel);
-      face.position.set(domeCx + (domeR + 0.004) * Math.cos(a), domeCy + (domeR + 0.004) * Math.sin(a), CFG.railZ);
-      face.rotation.z = q;
-      machine.add(face);
-      // 沿弧的一条镀铬棱线：把这条完整圆弧画出来
-      const edge = new THREE.Mesh(new THREE.BoxGeometry(len, 0.012, 0.136), M.chrome);
-      edge.position.set(domeCx + (domeR + 0.014) * Math.cos(a), domeCy + (domeR + 0.014) * Math.sin(a), CFG.railZ);
-      edge.rotation.z = q;
-      machine.add(edge);
+
+    // 端头收口：面板/灯线/镀铬线/导轨面是四层不同半径的板，若在端点各自径向平切，
+    // 切口会落在不同半径上，侧面看就是一排阶梯锯齿（弧顶衔接显生硬的原因）。
+    // 两端都让四层一起向同一条中心半径 RC 收拢、截面同步变薄，收成一个圆滑的尖端。
+    // 右端收口必须极短：弧带右端已经贴到机身边缘，多延伸一点尖端就会从
+    // 立柱槽里探出去，变成一块悬空的白色亮片。
+    const RC = domeR + 0.025;                // 收口汇聚的中心半径（各层向它叠合）
+    const CAP_R = 0.020, CAP_L = 0.072;      // 收口角长：右端极短，只够把切口收拢
+    const NCAP = 9, NMID = 54;
+    const slices = [];
+    for (let i = 0; i < NCAP; i++) {         // 右端收口（滑道出口侧）
+      const u = (i + 0.5) / NCAP;
+      slices.push({ a: aR - CAP_R * (1 - u), k: Math.sqrt(Math.max(0, 1 - (1 - u) ** 2)), step: CAP_R / NCAP, cap: true });
     }
-    // 圆弧两端封口
-    for (const x of [VIS_XR, VIS_XL]) {
-      const y = domeCy + Math.sqrt(Math.max(0, domeR * domeR - (x - domeCx) ** 2));
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.095, 0.150), M.dark);
-      cap.position.set(x, y - 0.02, CFG.railZ);
-      machine.add(cap);
+    for (let i = 0; i < NMID; i++) {         // 中段 + 右端：球真正滚过的弧，全高
+      slices.push({ a: aR + (aL - aR) * (i + 0.5) / NMID, k: 1, step: (aL - aR) / NMID });
+    }
+    for (let i = 0; i < NCAP; i++) {         // 左端收口（朝机头左缘，圆滑收尖）
+      const u = (i + 0.5) / NCAP;
+      slices.push({ a: aL + CAP_L * (1 - u), k: Math.sqrt(Math.max(0, 1 - (1 - u) ** 2)), step: CAP_L / NCAP, cap: true });
+    }
+    // 收口尖端必须留在机身轮廓之内，不许从机台侧边探出去变成悬空碎片
+    const X_LIMIT = OUT_W / 2 - 0.012;
+    for (const s of slices) {
+      const a = s.a, k = s.k;
+      const len = s.step * RC * 1.7;         // 相邻板搭接，弧面没有断缝
+      const q = a + Math.PI / 2;
+      // 半径和厚度同时按 k 向 RC 收拢：端头各层叠合成一个薄尖，不再各切一刀
+      const put = (r0, h0, depth, mat) => {
+        const rr = RC + (r0 - RC) * k;
+        if (s.cap && Math.abs(domeCx + rr * Math.cos(a)) > X_LIMIT) return null;  // 顶出机身的尖不出图
+        const m = new THREE.Mesh(new THREE.BoxGeometry(len, h0 * k, depth), mat);
+        m.position.set(domeCx + rr * Math.cos(a), domeCy + rr * Math.sin(a), CFG.railZ);
+        m.rotation.z = q;
+        machine.add(m);
+        return m;
+      };
+      const body = put(domeR + 0.020, 0.040, 0.150, M.body);   // 面板本体
+      if (body) body.castShadow = true;
+      put(domeR + 0.046, 0.010, 0.140, neonMat(NEON.cyan, 1.1)); // 灯线
+      put(domeR + 0.004, 0.010, 0.126, M.steel);                 // 钢导轨面（球在这上面滚）
+      put(domeR + 0.014, 0.012, 0.136, M.chrome);                // 镀铬棱线
     }
 
     // 拱肩填充：把弧面板与机头横梁之间的月牙空档填实（机身同色，不再露出背板的坑）
@@ -1248,8 +1262,9 @@ function setSlotLed(i, lit, mult) {
   const g = GOLDFX;
   s.ringMat.color.setHex(g);
   s.ringMat.opacity = 1;
-  s.cavMat.emissive.setHex(g);
-  s.cavMat.emissiveIntensity = 0.85;
+  // 洞腔保持暗底：点亮只靠描边 + 光柱 + 光晕，不要整块纯色面
+  s.cavMat.emissive.setHex(0x000000);
+  s.cavMat.emissiveIntensity = 0;
   s.beam.visible = true;
   s.beamMat.color.setHex(g);
   s.ledMat.color.setHex(g);
@@ -1822,7 +1837,7 @@ function animate(now) {
   );
   camera.lookAt(pointer.x * 0.04, LOOK_Y - pointer.y * 0.02, 0);
 
-  bloom.strength = 0.38 + flash;
+  bloom.strength = 0.26 + flash;
   flash *= Math.pow(0.02, dt);
 
   composer.render();
@@ -1972,11 +1987,37 @@ if (location.hash.includes('returndbg')) {   // 截图用：摆一颗球在回�
 {
   const m = location.hash.match(/cam=([\d.]+)/);
   const my = location.hash.match(/camy=(-?[\d.]+)/);
+  const mx = location.hash.match(/camx=(-?[\d.]+)/);
   if (m) CAM_BASE.z = parseFloat(m[1]);
   if (my) { CAM_BASE.y = parseFloat(my[1]); LOOK_Y = CAM_BASE.y - 0.05; }
+  if (mx) CAM_BASE.x = parseFloat(mx[1]);
 }
 
 newRound();                         // 进场就先亮出本局倍率
 spawnRailBall();                    // 进场球就坐在拉杆上（之后每局由回球槽滚回来）
 console.log(`理论 RTP ${(theoreticalRtp() * 100).toFixed(2)}%  出口数 ${SLOT_COUNT}`);
+
+// 调试：#probe=x,y （屏幕归一化坐标）射线拾取，把命中的模型名/材质/位置打到页面上
+if (location.hash.includes('probe')) {
+  const pm = location.hash.match(/probe=([\d.]+),([\d.]+)/);
+  const nx0 = pm ? parseFloat(pm[1]) : 0.9, ny = pm ? parseFloat(pm[2]) : 0.62;
+  setTimeout(() => {
+    const rc = new THREE.Raycaster();
+    const scan = [];
+    const N = 30;
+    for (let i = 0; i <= N; i++) {
+      const nx = nx0 + (0.57 - nx0) * i / N;
+      rc.setFromCamera(new THREE.Vector2(nx * 2 - 1, -(ny * 2 - 1)), camera);
+      const h = rc.intersectObjects(scene.children, true)[0];
+      if (!h) { scan.push(`${nx.toFixed(3)} miss`); continue; }
+      const o = h.object, mt = o.material || {};
+      const pp = o.geometry && o.geometry.parameters ? JSON.stringify(o.geometry.parameters) : '';
+      scan.push(`${nx.toFixed(3)} d${h.distance.toFixed(2)} ${o.geometry.type} #${mt.color ? mt.color.getHexString() : '??'} p(${h.point.x.toFixed(2)},${h.point.y.toFixed(2)},${h.point.z.toFixed(2)}) ${pp.slice(0, 60)}`);
+    }
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'position:fixed;left:0;top:0;z-index:99999;color:#0f0;background:#000c;font:12px monospace;padding:8px;margin:0;white-space:pre';
+    pre.textContent = scan.join('\n');
+    document.body.appendChild(pre);
+  }, 8000);
+}
 requestAnimationFrame(animate);

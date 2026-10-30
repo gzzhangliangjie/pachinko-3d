@@ -7,3 +7,8 @@ repos/
 old_*.html
 .edgeprof*/
 
+analyze.html
+dom*.html
+scan_dom*.html
+gltest.html
+user_ref.*

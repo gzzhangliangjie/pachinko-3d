@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  html,body{margin:0;padding:0;background:#000;overflow:hidden}
+  canvas{display:block}
+  #wrap{display:flex}
+</style></head>
+<body>
+<div id="wrap"><canvas id="a"></canvas><canvas id="b"></canvas></div>
+<img id="src" style="display:none">
+<script>
+// 调试用：左右并排裁两块区域放大，对比两个角的细节
+const q = new URLSearchParams(location.search);
+const src = q.get('src') || 'shot_top.png';
+const w = +(q.get('w') || 240), h = +(q.get('h') || 180), s = +(q.get('s') || 4);
+const x1 = +(q.get('x1') || 0), y1 = +(q.get('y1') || 0);
+const x2 = +(q.get('x2') || 0), y2 = +(q.get('y2') || 0);
+const img = document.getElementById('src');
+for (const id of ['a', 'b']) {
+  const c = document.getElementById(id);
+  c.width = w * s; c.height = h * s;
+}
+img.onload = () => {
+  const put = (id, x, y) => {
+    const c = document.getElementById(id);
+    const g = c.getContext('2d');
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.drawImage(img, x, y, w, h, 0, 0, c.width, c.height);
+  };
+  put('a', x1, y1); put('b', x2, y2);
+  document.title = 'crop-done';
+};
+img.src = src;
+</script>
+</body></html>

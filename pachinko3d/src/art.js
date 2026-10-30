@@ -185,7 +185,7 @@ export const NEON = {
 
 export function neonMat(color, intensity = 2.4) {
   return new THREE.MeshStandardMaterial({
-    color: 0x081018, emissive: color, emissiveIntensity: intensity,
+    color: 0x081018, emissive: color, emissiveIntensity: intensity * 0.72,
     metalness: 0.2, roughness: 0.4,
   });
 }

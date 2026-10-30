@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  html,body{margin:0;padding:0;background:#000;overflow:hidden}
+  canvas{display:block}
+</style></head>
+<body>
+<canvas id="cv"></canvas>
+<img id="src" style="display:none">
+<script>
+// 调试用：按 ?src=&x=&y=&w=&h=&s= 裁切放大截图，headless 截图即得局部细节
+const q = new URLSearchParams(location.search);
+const src = q.get('src') || 'shot_top.png';
+const x = +(q.get('x') || 0), y = +(q.get('y') || 0);
+const w = +(q.get('w') || 300), h = +(q.get('h') || 300), s = +(q.get('s') || 3);
+const bright = +(q.get('bright') || 1);
+const cv = document.getElementById('cv');
+const img = document.getElementById('src');
+cv.width = w * s; cv.height = h * s;
+img.onload = () => {
+  const g = cv.getContext('2d');
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  if (bright !== 1) g.filter = `brightness(${bright})`;
+  g.drawImage(img, x, y, w, h, 0, 0, cv.width, cv.height);
+  g.filter = 'none';
+  document.title = 'crop-done';
+};
+img.src = src;
+</script>
+</body></html>

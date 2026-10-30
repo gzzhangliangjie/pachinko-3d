@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  html,body{margin:0;padding:0;background:#111;color:#eee;font:16px monospace;overflow:hidden}
+  canvas{display:block}
+  #info{position:fixed;left:8px;top:8px;background:#000a;padding:6px 10px;white-space:pre}
+</style></head>
+<body>
+<div id="info">loading…</div>
+<canvas id="cv" width="1600" height="1000"></canvas>
+<script>
+// 调试用：对比两张截图，把差异处标红，并给出差异包围盒
+const q = new URLSearchParams(location.search);
+const A = q.get('a'), B = q.get('b');
+const TH = +(q.get('th') || 8);
+const cv = document.getElementById('cv');
+const g = cv.getContext('2d');
+const info = document.getElementById('info');
+function load(src) {
+  return new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.src = src; });
+}
+(async () => {
+  const [ia, ib] = await Promise.all([load(A), load(B)]);
+  cv.width = ib.width; cv.height = ib.height;
+  g.drawImage(ib, 0, 0);
+  const ca = document.createElement('canvas'); ca.width = ia.width; ca.height = ia.height;
+  const ga = ca.getContext('2d'); ga.drawImage(ia, 0, 0);
+  const cb = document.createElement('canvas'); cb.width = ib.width; cb.height = ib.height;
+  const gb = cb.getContext('2d'); gb.drawImage(ib, 0, 0);
+  const da = ga.getImageData(0, 0, ca.width, ca.height).data;
+  const db = gb.getImageData(0, 0, cb.width, cb.height).data;
+  let minx = 1e9, miny = 1e9, maxx = -1, maxy = -1, n = 0;
+  const w = Math.min(ca.width, cb.width), h = Math.min(ca.height, cb.height);
+  const out = g.getImageData(0, 0, w, h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const d = Math.max(Math.abs(da[i] - db[i]), Math.abs(da[i + 1] - db[i + 1]), Math.abs(da[i + 2] - db[i + 2]));
+      if (d > TH) {
+        n++; if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y;
+        out.data[i] = 255; out.data[i + 1] = 0; out.data[i + 2] = 0;
+      }
+    }
+  }
+  g.putImageData(out, 0, 0);
+  if (n > 0) {
+    g.strokeStyle = '#0f0'; g.lineWidth = 3;
+    g.strokeRect(minx, miny, maxx - minx, maxy - miny);
+    info.textContent = `diff px=${n}  bbox=(${minx},${miny})-(${maxx},${maxy})`;
+  } else {
+    info.textContent = 'no diff';
+  }
+})();
+</script>
+</body></html>
