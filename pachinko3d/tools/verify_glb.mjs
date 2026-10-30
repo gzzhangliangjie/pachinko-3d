@@ -4,7 +4,8 @@ import { createServer } from 'node:http';
 import { createReadStream, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
 
-const GLB = process.argv[2] || '/dist/pachinko_machine.glb';
+// 相对站点根目录（E:/pachinko-3d）；注意 Git Bash 会把以 / 开头的参数转成 Windows 路径
+const GLB = '/' + (process.argv[2] || 'dist/pachinko_machine.glb').replace(/^\/+/, '');
 const SHOT = process.argv[3] || resolve(import.meta.dirname, '..', 'dist', 'preview.png');
 const PORT = 9334;
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
@@ -13,6 +14,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const WEB_ROOT = resolve(ROOT, '..');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.glb': 'model/gltf-binary', '.png': 'image/png', '.json': 'application/json' };
 const server = createServer((req, res) => {
+  if (process.env.CDP_DEBUG) console.log('REQ', req.url);
   const p = resolve(WEB_ROOT, '.' + decodeURIComponent(req.url.split('?')[0]));
   if (!p.startsWith(WEB_ROOT)) { res.writeHead(403).end(); return; }
   try {
@@ -50,6 +52,10 @@ async function main() {
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
+    if (process.env.CDP_DEBUG && m.method === 'Runtime.consoleAPICalled') {
+      console.log('console:', (m.params.args || []).map((a) => a.value ?? a.description ?? '').join(' '));
+    }
+    if (process.env.CDP_DEBUG && m.method === 'Log.entryAdded') console.log('log:', m.params.entry.text);
     if (m.id && pending.has(m.id)) {
       const { res, rej } = pending.get(m.id); pending.delete(m.id);
       m.error ? rej(new Error(m.error.message)) : res(m.result);
@@ -59,6 +65,7 @@ async function main() {
   const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
   await send('Page.enable', {}, sessionId);
   await send('Runtime.enable', {}, sessionId);
+  await send('Log.enable', {}, sessionId);
   const page = `http://127.0.0.1:${WEB_PORT}/pachinko3d/verify.html?glb=` + encodeURIComponent(GLB);
   await send('Page.navigate', { url: page }, sessionId);
 
