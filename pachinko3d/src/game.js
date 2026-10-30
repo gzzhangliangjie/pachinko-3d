@@ -751,17 +751,26 @@ const RETURN_TROUGH = [
     }
   }
   {
+    // 直段一整条 U 形截面一次成型（底板 + 前后唇），正面是完整连续面，
+    // 不再有两块盒子拼接的交界细缝
     const a = pv(RETURN_TROUGH[0]), b = pv(RETURN_TROUGH[4]);
-    const mx = (a.x + b.x) / 2, my = a.y, mz = (a.z + b.z) / 2;
     const len = b.x - a.x;
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(len, 0.014, 0.115), M.dark);
-    floor.position.set(mx, my - 0.052, mz);
-    machine.add(floor);
-    for (const s of [-1, 1]) {
-      const lip = new THREE.Mesh(new THREE.BoxGeometry(len, 0.038, 0.010), s < 0 ? M.steel : M.dark);
-      lip.position.set(mx, my - 0.028, mz + s * 0.058);
-      machine.add(lip);
-    }
+    const shp = new THREE.Shape();          // (z 偏移, y 偏移)，凹口朝上：两侧唇 + 底板
+    shp.moveTo(-0.063, -0.059);
+    shp.lineTo(0.063, -0.059);
+    shp.lineTo(0.063, -0.009);
+    shp.lineTo(0.053, -0.009);
+    shp.lineTo(0.053, -0.049);
+    shp.lineTo(-0.053, -0.049);
+    shp.lineTo(-0.053, -0.009);
+    shp.lineTo(-0.063, -0.009);
+    shp.closePath();
+    const g = new THREE.ExtrudeGeometry(shp, { depth: len, bevelEnabled: false });
+    g.translate(0, 0, -len / 2);
+    g.rotateY(Math.PI / 2);                 // 挤出方向转向 x，截面落在 yz 平面
+    const trough = new THREE.Mesh(g, M.dark);
+    trough.position.set((a.x + b.x) / 2, a.y, (a.z + b.z) / 2);
+    machine.add(trough);
   }
   // 槽后裙板：把出口下方到机台底沿之间的空档补成机身
   const apron = new THREE.Mesh(new THREE.BoxGeometry(1.90, 0.20, 0.02), M.body);
