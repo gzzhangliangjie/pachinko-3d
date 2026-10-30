@@ -727,37 +727,41 @@ const RETURN_TROUGH = [
   [-0.20, -1.170, 0.085],
   [0.40, -1.170, 0.105],
   [0.76, -1.175, 0.160],
-  [0.88, -1.185, 0.232],
+  // 原中间点 [0.88, -1.185, 0.232] 向前拱起：槽板跟着悬在待发球头顶形成"黑块"，已删
   [CFG.railX, CFG.railBottomY + CFG.ballR + 0.01, CFG.laneZ],
 ];
 {
   const pv = (a) => new THREE.Vector3(a[0], a[1], a[2]);
   // 回球槽整条：U 形截面（底板 + 前后唇）按路径逐段挤出，段与段共用端点、
   // 端面完全对接——正面是一整条连续的槽，没有任何拼接细缝或搭接错位。
-  const uShape = () => {                    // (z 偏移, y 偏移)，凹口朝上
+  // lipTop: 唇顶高度（相对路径点）。末段用浅唇（顶低于球心），球坐槽里露出大半身，
+  // 待发位上方不再有任何悬空结构。
+  const uShape = (lipTop) => {              // (z 偏移, y 偏移)，凹口朝上
     const s = new THREE.Shape();
     s.moveTo(-0.063, -0.059);
     s.lineTo(0.063, -0.059);
-    s.lineTo(0.063, -0.009);
-    s.lineTo(0.053, -0.009);
+    s.lineTo(0.063, lipTop);
+    s.lineTo(0.053, lipTop);
     s.lineTo(0.053, -0.049);
     s.lineTo(-0.053, -0.049);
-    s.lineTo(-0.053, -0.009);
-    s.lineTo(-0.063, -0.009);
+    s.lineTo(-0.053, lipTop);
+    s.lineTo(-0.063, lipTop);
     s.closePath();
     return s;
   };
-  const segs = [[0, 4], [4, 5]];            // 直段一条，右侧上翘过渡段一段，共享端点无缝
+  const segs = [[0, 3], [3, 4]];            // 直段深槽到点3；末段浅槽滑落到待发位
   for (const [i0, i1] of segs) {
     const a = pv(RETURN_TROUGH[i0]), b = pv(RETURN_TROUGH[i1]);
     const dir = new THREE.Vector3().subVectors(b, a);
     const len = dir.length();
     dir.normalize();
-    const xAx = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), dir).normalize();
-    const yAx = new THREE.Vector3().crossVectors(dir, xAx).normalize();
-    const g = new THREE.ExtrudeGeometry(uShape(), { depth: len, bevelEnabled: false });
-    g.applyMatrix4(new THREE.Matrix4().makeBasis(xAx, yAx, dir).setPosition(a));
-    machine.add(new THREE.Mesh(g, M.dark));
+    // 截面姿态始终"尽量朝上"：凹口方向 = up 去掉沿路径的分量
+    const hAx = new THREE.Vector3(0, 1, 0).addScaledVector(dir, -dir.y).normalize();
+    const wAx = new THREE.Vector3().crossVectors(hAx, dir).normalize();
+    const g = new THREE.ExtrudeGeometry(uShape(i0 === 0 ? -0.009 : -0.020), { depth: len, bevelEnabled: false });
+    g.applyMatrix4(new THREE.Matrix4().makeBasis(wAx, hAx, dir).setPosition(a));
+    // 末段浅槽用机身同色：周围立柱/滑道深色件都是 M.body，避免黑与黑不一致
+    machine.add(new THREE.Mesh(g, M.body));
   }
   // 槽后裙板：把出口下方到机台底沿之间的空档补成机身
   const apron = new THREE.Mesh(new THREE.BoxGeometry(1.90, 0.20, 0.02), M.body);
@@ -1036,8 +1040,8 @@ function drawMultPanel(mult, litCount, on) {
 
   g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillStyle = col;
-  g.font = '700 44px "PingFang SC",system-ui,sans-serif';
-  g.fillText(on ? `点亮 ${litCount} 个出口` : '等待投币', W / 2, 92);
+  g.font = '700 58px "PingFang SC",system-ui,sans-serif';
+  g.fillText(on ? `点亮 ${litCount} 个出口` : '等待投币', W / 2, 98);
 
   g.fillStyle = txt;
   g.font = '900 200px "PingFang SC",system-ui,sans-serif';
