@@ -319,8 +319,12 @@ function box(w, h, d, mat) {
     g.add(foot);
   }
 
-  const glass = new THREE.Mesh(new THREE.PlaneGeometry(OPEN_W - 0.02, OPEN_H - 0.02), M.glass);
-  glass.position.set(0, 0, FRONT_Z - 0.03);
+  // 玻璃底边抬到回球槽上方（y=-1.12）：原玻璃垂到 y=-1.24，把整条直段槽
+  // 罩在玻璃后面，反射提白把槽色洗浅，与末段（窗口外直接可见的暗紫黑）
+  // 颜色对不上；真机回球槽也在玻璃外面
+  const glassBot = -1.12;
+  const glass = new THREE.Mesh(new THREE.PlaneGeometry(OPEN_W - 0.02, OPEN_H / 2 - 0.01 - glassBot), M.glass);
+  glass.position.set(0, (OPEN_H / 2 - 0.01 + glassBot) / 2, FRONT_Z - 0.03);
   glass.renderOrder = 5;
   g.add(glass);
 }
@@ -732,6 +736,12 @@ const RETURN_TROUGH = [
 ];
 {
   const pv = (a) => new THREE.Vector3(a[0], a[1], a[2]);
+  // 回球槽统一材质：暗紫黑。直段顶面朝上受光，用 M.body 会偏灰、用 M.steel
+  // 会偏亮钢色，都跟末段的暗紫黑对不上；索性整条一个低反光深紫黑，
+  // 直段/末段同材质，颜色必然连续。
+  const troughMat = new THREE.MeshStandardMaterial({
+    color: 0x191322, metalness: 0.5, roughness: 0.55, envMap: env, envMapIntensity: 0.5,
+  });
   // 回球槽整条：U 形截面（底板 + 前后唇）按路径逐段挤出，段与段共用端点、
   // 端面完全对接——正面是一整条连续的槽，没有任何拼接细缝或搭接错位。
   // lipTop: 唇顶高度（相对路径点）。末段用浅唇（顶低于球心），球坐槽里露出大半身，
@@ -760,8 +770,8 @@ const RETURN_TROUGH = [
     const wAx = new THREE.Vector3().crossVectors(hAx, dir).normalize();
     const g = new THREE.ExtrudeGeometry(uShape(i0 === 0 ? -0.009 : -0.020), { depth: len, bevelEnabled: false });
     g.applyMatrix4(new THREE.Matrix4().makeBasis(wAx, hAx, dir).setPosition(a));
-    // 末段浅槽用机身同色：周围立柱/滑道深色件都是 M.body，避免黑与黑不一致
-    machine.add(new THREE.Mesh(g, M.body));
+    // 整条回球槽（直段+末段）同一暗紫黑材质
+    machine.add(new THREE.Mesh(g, troughMat));
   }
   // 槽后裙板：把出口下方到机台底沿之间的空档补成机身
   const apron = new THREE.Mesh(new THREE.BoxGeometry(1.90, 0.20, 0.02), M.body);
