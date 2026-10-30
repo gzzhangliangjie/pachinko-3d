@@ -31,9 +31,19 @@ node build.mjs     # esbuild 打包为 ../pachinko-drop.html
 
 物理参数与机台几何在 `pachinko3d/src/layout.mjs`，赔率模型在 `src/rules.mjs`（游戏与仿真共用）。
 
-调试参数（URL hash）：`#simtest` 同步快进 6 局、`#auto` 自动试玩、`#chipdbg` 装填动画调试、`#lit` 摆拍点亮状态、`cam=` / `camy=` 调相机。
+调试参数（URL hash）：`#simtest` 同步快进 6 局、`#auto` 自动试玩、`#chipdbg` 装填动画调试、`#lit` 摆拍点亮状态、`cam=` / `camy=` / `camx=` / `lookx=` 调相机。
 
 验证脚本：`node src/t_track.mjs`（弹射轨道逐档测试）、`node src/t_mc.mjs 200`（蒙特卡洛落点分布）。
+
+### 导出 GLB（给 Unity / UE 用）
+
+```bash
+node build_export.mjs                     # 打包 export.html（= 游戏 + GLTFExporter）
+node tools/export_glb.mjs machine 2048    # 导整台机器（不带地面/墙）
+node tools/export_glb.mjs scene 2048      # 导整场景
+```
+
+产物落在 `pachinko3d/dist/`：`pachinko_machine.glb` / `pachinko_scene.glb`。第二个参数是贴图边长上限，贴图偏大时调小（如 `1024`）能显著减小体积。实现上是在 `export.html?export=machine` 里调 `GLTFExporter`，用无头 Edge 触发下载再落到 `dist/`，`export.html`、`dist/`、`.edgeprof_export/` 都是生成物，不入库。
 
 ## 版本历史
 

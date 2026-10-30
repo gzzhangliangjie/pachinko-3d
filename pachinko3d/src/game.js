@@ -2491,4 +2491,7 @@ if (location.hash.includes('probe')) {
     document.body.appendChild(pre);
   }, 8000);
 }
+// 调试/导出钩子：导出 GLB 等工具需要拿到场景根节点
+window.__PACHINKO = { THREE, scene, machine, camera, renderer, M };
+
 requestAnimationFrame(animate);

@@ -7,6 +7,10 @@ repos/
 old_*.html
 .edgeprof*/
 
+# GLB 导出工具链的生成物（node build_export.mjs / node tools/export_glb.mjs 重新生成）
+pachinko3d/export.html
+pachinko3d/dist/
+
 analyze.html
 dom*.html
 scan_dom*.html
