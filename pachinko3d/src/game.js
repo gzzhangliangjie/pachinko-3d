@@ -141,6 +141,10 @@ const OUT_H = OPEN_H + HEADER_H + DECK_H;
 const HEADER_Y = OPEN_H / 2 + HEADER_H / 2;          // 1.56
 const DECK_Y = -OPEN_H / 2 - DECK_H / 2;             // -1.43
 const FRONT_Z = 0.18, BACK_Z = -0.20;
+// 投币口：机头面板左下角（左立柱下段），投币动画的金币从这里掉进去
+const COIN_SLOT = { x: -0.935, y: DECK_Y + 0.01, z: FRONT_Z + 0.006 };
+let coinLedMat = null;      // 投币口指示灯材质（投币时闪一下）
+let coinLedT = 0;
 
 function box(w, h, d, mat) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -293,6 +297,23 @@ function box(w, h, d, mat) {
   slotHole.position.set(-0.58, DECK_Y + 0.004, FRONT_Z + 0.017);
   g.add(slotHole);
 
+  // ---- 投币口（面板左下角）：钢板 + 镀铬圈 + 竖向投币缝 + 金色指示灯 ----
+  {
+    const cplate = box(0.13, 0.24, 0.014, M.steel);
+    cplate.position.set(COIN_SLOT.x, COIN_SLOT.y, COIN_SLOT.z);
+    g.add(cplate);
+    const cring = new THREE.Mesh(new THREE.TorusGeometry(0.048, 0.007, 10, 28), M.chrome);
+    cring.position.set(COIN_SLOT.x, COIN_SLOT.y + 0.05, COIN_SLOT.z + 0.008);
+    g.add(cring);
+    const slit = new THREE.Mesh(new THREE.BoxGeometry(0.020, 0.082, 0.008), new THREE.MeshStandardMaterial({ color: 0x02040a, roughness: 1 }));
+    slit.position.set(COIN_SLOT.x, COIN_SLOT.y + 0.05, COIN_SLOT.z + 0.009);
+    g.add(slit);
+    coinLedMat = neonMat(NEON.gold, 0.5);
+    const led = new THREE.Mesh(new THREE.CircleGeometry(0.013, 14), coinLedMat);
+    led.position.set(COIN_SLOT.x, COIN_SLOT.y - 0.088, COIN_SLOT.z + 0.010);
+    g.add(led);
+  }
+
   [NEON.cyan, NEON.gold, NEON.magenta].forEach((c, i) => {
     const btn = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.026, 24), neonMat(c, 1.6));
     btn.rotation.x = Math.PI / 2;
@@ -327,6 +348,36 @@ function box(w, h, d, mat) {
   glass.position.set(0, (OPEN_H / 2 - 0.01 + glassBot) / 2, FRONT_Z - 0.03);
   glass.renderOrder = 5;
   g.add(glass);
+}
+
+// ---------------------------------------------------------------------------
+// 投币动画：金币从投币口上方掉进缝里，落底时指示灯闪一下 + 金色火花
+// ---------------------------------------------------------------------------
+const coinFx = [];
+{
+  const geo = new THREE.CylinderGeometry(0.027, 0.027, 0.007, 20);
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffc851, metalness: 0.55, roughness: 0.34,
+    emissive: 0x8a5c07, emissiveIntensity: 0.85,
+  });
+  for (let i = 0; i < 5; i++) {
+    const m = new THREE.Mesh(geo, mat);
+    m.visible = false;
+    machine.add(m);
+    coinFx.push({ mesh: m, active: false, v: 0 });
+  }
+}
+function spawnCoinFx() {
+  const c = coinFx.find((x) => !x.active);
+  if (!c) return;
+  c.active = true;
+  c.v = 0.10;
+  c.mesh.visible = true;
+  c.mesh.position.set(COIN_SLOT.x, COIN_SLOT.y + 0.20, COIN_SLOT.z + 0.030);
+  // 面朝镜头（先绕 X 转 90° 把盘面立起来），再在自身平面内随机转角；
+  // 直接用 rotation.z 随机会把圆盘转成"侧对镜头"的一条线
+  c.mesh.rotation.set(Math.PI / 2 + (Math.random() - 0.5) * 0.34, (Math.random() - 0.5) * 0.28, 0);
+  c.mesh.rotateZ(Math.random() * Math.PI * 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -1165,9 +1216,11 @@ function ensureAudio() { audio.unlock(); }
 // ---------------------------------------------------------------------------
 const BET_LEVELS = [8, 16, 24, 32, 48, 64, 96, 128];
 const CHIP_PER_BALL = 1;   // 1 筹码 = 1 颗筹码球
+const COIN_PER_INSERT = 10; // 投一枚游戏币 = +10 筹码
 
 const state = {
-  chips: 1000,
+  chips: 0,
+  coinIns: 0,           // 投币总次数（投币按钮上显示）
   stake: 8,
   rounds: 0,
   totalBet: 0,
@@ -1192,6 +1245,8 @@ const ui = {
   rounds: document.getElementById('rounds'),
   betGrid: document.getElementById('betGrid'),
   fireBtn: document.getElementById('fireBtn'),
+  coinBtn: document.getElementById('coinBtn'),
+  coinSub: document.getElementById('coinSub'),
   fireLabel: document.getElementById('fireLabel'),
   fireSub: document.getElementById('fireSub'),
   autoBtn: document.getElementById('autoBtn'),
@@ -1221,6 +1276,7 @@ function setBtnLabel(main, sub) { ui.fireLabel.textContent = main; ui.fireSub.te
 function refreshHud() {
   ui.credits.textContent = fmt(state.chips);
   ui.rounds.textContent = state.rounds;
+  if (ui.coinSub) ui.coinSub.textContent = `（${state.coinIns}）`;
   ui.litView.textContent = state.round ? state.round.litCount : '--';
   ui.fireBtn.disabled = state.phase === 'loading' || state.phase === 'dropping' || state.phase === 'resolve';
   switch (state.phase) {
@@ -1312,11 +1368,32 @@ function newRound() {
   refreshHud();
 }
 
+// ---- 投币：投一枚游戏币 = +10 筹码（带投币口动画 + 音效）----
+function insertCoin(withFx = true) {
+  ensureAudio();
+  state.chips += COIN_PER_INSERT;
+  state.coinIns++;
+  refreshHud();
+  if (withFx) {
+    audio.coinIns();
+    spawnCoinFx();
+  }
+}
+
 // ---- 投币（筹码球装填）----
 function insertChips(instant = false) {
   ensureAudio();
   if (state.phase !== 'idle') return;
-  if (state.chips < state.stake) { toast('筹码不足，请降低投注'); return; }
+  if (state.chips < state.stake) {
+    // 自动试玩 / 调试脚本（instant）：静默补币，别让机器人卡在没筹码上；
+    // 手动投注则提示玩家去按「投币」
+    if (state.auto > 0 || instant) {
+      while (state.chips < state.stake) insertCoin(false);
+    } else {
+      toast('筹码不足，请点「投币」投几枚游戏币');
+      return;
+    }
+  }
 
   state.chips -= state.stake;
   state.totalBet += state.stake;
@@ -1502,6 +1579,11 @@ ui.fireBtn.addEventListener('pointerdown', (e) => {
   else if (state.phase === 'armed') beginDrag(e.clientY);
 });
 
+// 投币：+10 筹码，机头左下角投币口播放金币掉落动画
+if (ui.coinBtn) {
+  ui.coinBtn.addEventListener('click', () => insertCoin());
+}
+
 // 直接抓住机台右下角的拉杆头拖：往下拉 → 弹簧拉长 → 松手弹出
 stage.addEventListener('pointerdown', (e) => {
   if (e.target !== renderer.domElement) return;
@@ -1561,6 +1643,7 @@ window.addEventListener('keydown', (e) => {
     else if (state.phase === 'armed') startCharge();
   }
   if (e.code === 'KeyM') { ensureAudio(); audio.toggle(); syncSfxBtn(); audio.click(); }
+  if (e.code === 'KeyC') insertCoin();   // 快捷键 C：投币
   if (e.code === 'Escape') ui.sheet.classList.remove('show');
 });
 window.addEventListener('keyup', (e) => {
@@ -1658,6 +1741,22 @@ function animate(now) {
         burst(localPos(RAMP.cx, CHIP_WINDOW.bot + 0.09, chipBalls.glassZ), 0xffd76a, 3, 0.4);
         if (chipLoaded >= state.stake) armRound();
       }
+    }
+  }
+
+  // ---- 投币动画：金币下落 → 没入投币缝 → 指示灯闪 + 火花 ----
+  coinLedT = Math.max(0, coinLedT - dt);
+  if (coinLedMat) coinLedMat.emissiveIntensity = coinLedT > 0 ? 0.9 + 5.4 * (coinLedT / 0.4) : 0.9;
+  for (const c of coinFx) {
+    if (!c.active) continue;
+    c.v = Math.min(1.4, c.v + 5.5 * dt);
+    c.mesh.position.y -= c.v * dt;
+    c.mesh.rotateZ(5.0 * dt);          // 自转（绕盘面法线，看起来是硬币在转）
+    if (c.mesh.position.y <= COIN_SLOT.y + 0.05) {
+      c.active = false;
+      c.mesh.visible = false;
+      coinLedT = 0.4;
+      burst(localPos(COIN_SLOT.x, COIN_SLOT.y + 0.05, COIN_SLOT.z + 0.035), 0xffd76a, 4, 0.35);
     }
   }
 

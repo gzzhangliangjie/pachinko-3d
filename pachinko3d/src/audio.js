@@ -214,6 +214,17 @@ function peg(v) {
   if (k > 0.3) nz(t, { dur: 0.028, vol: 0.05 * k, type: 'highpass', freq: 2800 });
 }
 
+// ---- 投币：游戏币滑入投币口（金属摩擦声 → 落底"叮" + 闷响）----
+function coinIns() {
+  if (!live()) return;
+  const t = ac.currentTime + 0.001;
+  nz(t, { dur: 0.15, vol: 0.045, type: 'bandpass', freq: 2600, q: 3, sweepTo: 900 });  // 币身刮过缝口
+  blip(t + 0.015, { f: 3400, f2: 2500, dur: 0.05, type: 'triangle', vol: 0.028 });     // 金属拨动
+  blip(t + 0.14, { f: 1560, f2: 1180, dur: 0.10, type: 'sine', vol: 0.05 });           // 落底"叮"
+  blip(t + 0.15, { f: 2340, dur: 0.05, type: 'sine', vol: 0.02 });
+  nz(t + 0.14, { dur: 0.06, vol: 0.03, type: 'lowpass', freq: 500 });                  // 落袋闷响
+}
+
 // ---- 筹码球入洞：金属币落袋，音高随装填进度往上爬（连击感）----
 function chip(i = 0) {
   if (!live()) return;
@@ -308,5 +319,5 @@ function lose() {
 
 export const audio = {
   unlock, isMuted, setMuted, toggle,
-  click, round, peg, chip, dragTick, dragReset, launch, land, win, lose,
+  click, round, peg, chip, coinIns, dragTick, dragReset, launch, land, win, lose,
 };
