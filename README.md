@@ -35,6 +35,19 @@ node build.mjs     # esbuild 打包为 ../pachinko-drop.html
 
 验证脚本：`node src/t_track.mjs`（弹射轨道逐档测试）、`node src/t_mc.mjs 200`（蒙特卡洛落点分布）。
 
+## 版本历史
+
+完整说明见 [CHANGELOG.md](CHANGELOG.md)，发版约定也写在那个文件的末尾。
+
+| 版本 | 主题 |
+| --- | --- |
+| `v1.3` | 投币系统 + 投注面板按钮尺寸统一 |
+| `v1.2` | 去分片拼接、回球槽不被玻璃洗白 |
+| `v1.1` | 弧带端头收口 + 窗缘填缝 + 整体压暗打光 |
+| `v1.0` | 首个可玩版本 |
+
+发版三件套：改代码 → `node build.mjs` 重打包 → 提交并打 **annotated** tag（`git tag -a vX.Y -m "vX.Y: 主题"`）→ 在 CHANGELOG 顶部补一段。轻量标签不写说明，禁止使用。
+
 ## 后续
 
 同一套参数可移植 Unity / Godot。
