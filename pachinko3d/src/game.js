@@ -5,6 +5,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 import {
   CFG, buildPhysicsWorld, createBallAt, nudge, slotCenterX, slotIndexFromX,
@@ -631,14 +632,11 @@ const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
     // 立柱槽里探出去，变成一块悬空的白色亮片。
     const RC = domeR + 0.025;                // 收口汇聚的中心半径（各层向它叠合）
     const CAP_R = 0.020, CAP_L = 0.072;      // 收口角长：右端极短，只够把切口收拢
-    const NCAP = 9, NMID = 54;
+    const NCAP = 9;
     const slices = [];
     for (let i = 0; i < NCAP; i++) {         // 右端收口（滑道出口侧）
       const u = (i + 0.5) / NCAP;
       slices.push({ a: aR - CAP_R * (1 - u), k: Math.sqrt(Math.max(0, 1 - (1 - u) ** 2)), step: CAP_R / NCAP, cap: true });
-    }
-    for (let i = 0; i < NMID; i++) {         // 中段 + 右端：球真正滚过的弧，全高
-      slices.push({ a: aR + (aL - aR) * (i + 0.5) / NMID, k: 1, step: (aL - aR) / NMID });
     }
     for (let i = 0; i < NCAP; i++) {         // 左端收口（朝机头左缘，圆滑收尖）
       const u = (i + 0.5) / NCAP;
@@ -646,26 +644,56 @@ const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
     }
     // 收口尖端必须留在机身轮廓之内，不许从机台侧边探出去变成悬空碎片
     const X_LIMIT = OUT_W / 2 - 0.012;
+    // 端头收口仍用短切片，四层各自合并成一个几何体
+    const layerGeos = { body: [], neon: [], steel: [], chrome: [] };
+    const _m4 = new THREE.Matrix4(), _pos = new THREE.Vector3(), _quat = new THREE.Quaternion(), _one = new THREE.Vector3(1, 1, 1), _zAxis = new THREE.Vector3(0, 0, 1);
     for (const s of slices) {
       const a = s.a, k = s.k;
-      const len = s.step * RC * 1.7;         // 相邻板搭接，弧面没有断缝
+      const len = s.step * RC * 1.7;
       const q = a + Math.PI / 2;
-      // 半径和厚度同时按 k 向 RC 收拢：端头各层叠合成一个薄尖，不再各切一刀
-      const put = (r0, h0, depth, mat) => {
+      const add = (r0, h0, depth, key) => {
         const rr = RC + (r0 - RC) * k;
-        if (s.cap && Math.abs(domeCx + rr * Math.cos(a)) > X_LIMIT) return null;  // 顶出机身的尖不出图
-        const m = new THREE.Mesh(new THREE.BoxGeometry(len, h0 * k, depth), mat);
-        m.position.set(domeCx + rr * Math.cos(a), domeCy + rr * Math.sin(a), CFG.railZ);
-        m.rotation.z = q;
-        machine.add(m);
-        return m;
+        if (s.cap && Math.abs(domeCx + rr * Math.cos(a)) > X_LIMIT) return;
+        _pos.set(domeCx + rr * Math.cos(a), domeCy + rr * Math.sin(a), CFG.railZ);
+        _quat.setFromAxisAngle(_zAxis, q);
+        layerGeos[key].push(new THREE.BoxGeometry(len, h0 * k, depth).applyMatrix4(_m4.compose(_pos, _quat, _one)));
       };
-      const body = put(domeR + 0.020, 0.040, 0.150, M.body);   // 面板本体
-      if (body) body.castShadow = true;
-      put(domeR + 0.046, 0.010, 0.140, neonMat(NEON.cyan, 1.1)); // 灯线
-      put(domeR + 0.004, 0.010, 0.126, M.steel);                 // 钢导轨面（球在这上面滚）
-      put(domeR + 0.014, 0.012, 0.136, M.chrome);                // 镀铬棱线
+      add(domeR + 0.020, 0.040, 0.150, 'body');   // 面板本体
+      add(domeR + 0.046, 0.010, 0.140, 'neon');   // 灯线
+      add(domeR + 0.004, 0.010, 0.126, 'steel');  // 钢导轨面（球在这上面滚）
+      add(domeR + 0.014, 0.012, 0.136, 'chrome'); // 镀铬棱线
     }
+    // 中段弧带：弯月截面（内弧+外弧闭合）沿 z 挤成整条曲面，
+    // 顶点焊接后重算法线 → 连续平滑，彻底消灭分片拼接的接缝/条纹
+    const moonLayer = (r0, r1, depth) => {
+      const shp = new THREE.Shape();
+      shp.absarc(0, 0, r1, aR, aL, false);        // 外弧
+      shp.absarc(0, 0, r0, aL, aR, true);         // 内弧
+      shp.closePath();
+      let g = new THREE.ExtrudeGeometry(shp, { depth, curveSegments: 128, bevelEnabled: false });
+      g.deleteAttribute('uv'); g.deleteAttribute('normal');
+      g = mergeVertices(g, 1e-4);
+      g.computeVertexNormals();
+      g.translate(0, 0, -depth / 2);
+      return g;
+    };
+    const bodyArc = new THREE.Mesh(moonLayer(domeR, domeR + 0.040, 0.150), M.body);
+    bodyArc.position.set(domeCx, domeCy, CFG.railZ);
+    bodyArc.castShadow = true;
+    machine.add(bodyArc);
+    const neonArc = new THREE.Mesh(moonLayer(domeR + 0.041, domeR + 0.051, 0.140), neonMat(NEON.cyan, 1.1));
+    neonArc.position.set(domeCx, domeCy, CFG.railZ);
+    machine.add(neonArc);
+    const steelArc = new THREE.Mesh(moonLayer(domeR - 0.001, domeR + 0.009, 0.126), M.steel);
+    steelArc.position.set(domeCx, domeCy, CFG.railZ);
+    machine.add(steelArc);
+    const chromeArc = new THREE.Mesh(moonLayer(domeR + 0.008, domeR + 0.020, 0.136), M.chrome);
+    chromeArc.position.set(domeCx, domeCy, CFG.railZ);
+    machine.add(chromeArc);
+    machine.add(new THREE.Mesh(mergeGeometries(layerGeos.body), M.body));
+    machine.add(new THREE.Mesh(mergeGeometries(layerGeos.neon), neonMat(NEON.cyan, 1.1)));
+    machine.add(new THREE.Mesh(mergeGeometries(layerGeos.steel), M.steel));
+    machine.add(new THREE.Mesh(mergeGeometries(layerGeos.chrome), M.chrome));
 
     // 拱肩填充：把弧面板与机头横梁之间的月牙空档填实（机身同色，不再露出背板的坑）
     // 左右铺到机身边缘：弧面带本身只画到物理端点，两侧剩下的角落由这块机身色填实
