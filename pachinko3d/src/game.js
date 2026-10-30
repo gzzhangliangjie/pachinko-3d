@@ -732,7 +732,9 @@ const RETURN_TROUGH = [
 ];
 {
   const pv = (a) => new THREE.Vector3(a[0], a[1], a[2]);
-  for (let i = 0; i < RETURN_TROUGH.length - 1; i++) {
+  // 前四段（出口正下方）y 完全相同、近乎一条直线——合成一整条，避免 5 节搭接
+  // 形成"一段一段"的接缝/亮块；只保留右侧两个真正带坡度的过渡段走循环
+  for (let i = 4; i < RETURN_TROUGH.length - 1; i++) {
     const a = pv(RETURN_TROUGH[i]), b = pv(RETURN_TROUGH[i + 1]);
     const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, mz = (a.z + b.z) / 2;
     const len = Math.hypot(b.x - a.x, b.y - a.y) + 0.02;
@@ -745,6 +747,19 @@ const RETURN_TROUGH = [
       const lip = new THREE.Mesh(new THREE.BoxGeometry(len, 0.038, 0.010), s < 0 ? M.steel : M.dark);
       lip.position.set(mx, my - 0.028, mz + s * 0.058);
       lip.rotation.z = ang;
+      machine.add(lip);
+    }
+  }
+  {
+    const a = pv(RETURN_TROUGH[0]), b = pv(RETURN_TROUGH[4]);
+    const mx = (a.x + b.x) / 2, my = a.y, mz = (a.z + b.z) / 2;
+    const len = b.x - a.x;
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(len, 0.014, 0.115), M.dark);
+    floor.position.set(mx, my - 0.052, mz);
+    machine.add(floor);
+    for (const s of [-1, 1]) {
+      const lip = new THREE.Mesh(new THREE.BoxGeometry(len, 0.038, 0.010), s < 0 ? M.steel : M.dark);
+      lip.position.set(mx, my - 0.028, mz + s * 0.058);
       machine.add(lip);
     }
   }
