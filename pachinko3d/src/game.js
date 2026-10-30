@@ -732,45 +732,32 @@ const RETURN_TROUGH = [
 ];
 {
   const pv = (a) => new THREE.Vector3(a[0], a[1], a[2]);
-  // 前四段（出口正下方）y 完全相同、近乎一条直线——合成一整条，避免 5 节搭接
-  // 形成"一段一段"的接缝/亮块；只保留右侧两个真正带坡度的过渡段走循环
-  for (let i = 4; i < RETURN_TROUGH.length - 1; i++) {
-    const a = pv(RETURN_TROUGH[i]), b = pv(RETURN_TROUGH[i + 1]);
-    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, mz = (a.z + b.z) / 2;
-    const len = Math.hypot(b.x - a.x, b.y - a.y) + 0.02;
-    const ang = Math.atan2(b.y - a.y, b.x - a.x);
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(len, 0.014, 0.115), M.dark);
-    floor.position.set(mx, my - 0.052, mz);
-    floor.rotation.z = ang;
-    machine.add(floor);
-    for (const s of [-1, 1]) {
-      const lip = new THREE.Mesh(new THREE.BoxGeometry(len, 0.038, 0.010), s < 0 ? M.steel : M.dark);
-      lip.position.set(mx, my - 0.028, mz + s * 0.058);
-      lip.rotation.z = ang;
-      machine.add(lip);
-    }
-  }
-  {
-    // 直段一整条 U 形截面一次成型（底板 + 前后唇），正面是完整连续面，
-    // 不再有两块盒子拼接的交界细缝
-    const a = pv(RETURN_TROUGH[0]), b = pv(RETURN_TROUGH[4]);
-    const len = b.x - a.x;
-    const shp = new THREE.Shape();          // (z 偏移, y 偏移)，凹口朝上：两侧唇 + 底板
-    shp.moveTo(-0.063, -0.059);
-    shp.lineTo(0.063, -0.059);
-    shp.lineTo(0.063, -0.009);
-    shp.lineTo(0.053, -0.009);
-    shp.lineTo(0.053, -0.049);
-    shp.lineTo(-0.053, -0.049);
-    shp.lineTo(-0.053, -0.009);
-    shp.lineTo(-0.063, -0.009);
-    shp.closePath();
-    const g = new THREE.ExtrudeGeometry(shp, { depth: len, bevelEnabled: false });
-    g.translate(0, 0, -len / 2);
-    g.rotateY(Math.PI / 2);                 // 挤出方向转向 x，截面落在 yz 平面
-    const trough = new THREE.Mesh(g, M.dark);
-    trough.position.set((a.x + b.x) / 2, a.y, (a.z + b.z) / 2);
-    machine.add(trough);
+  // 回球槽整条：U 形截面（底板 + 前后唇）按路径逐段挤出，段与段共用端点、
+  // 端面完全对接——正面是一整条连续的槽，没有任何拼接细缝或搭接错位。
+  const uShape = () => {                    // (z 偏移, y 偏移)，凹口朝上
+    const s = new THREE.Shape();
+    s.moveTo(-0.063, -0.059);
+    s.lineTo(0.063, -0.059);
+    s.lineTo(0.063, -0.009);
+    s.lineTo(0.053, -0.009);
+    s.lineTo(0.053, -0.049);
+    s.lineTo(-0.053, -0.049);
+    s.lineTo(-0.053, -0.009);
+    s.lineTo(-0.063, -0.009);
+    s.closePath();
+    return s;
+  };
+  const segs = [[0, 4], [4, 5]];            // 直段一条，右侧上翘过渡段一段，共享端点无缝
+  for (const [i0, i1] of segs) {
+    const a = pv(RETURN_TROUGH[i0]), b = pv(RETURN_TROUGH[i1]);
+    const dir = new THREE.Vector3().subVectors(b, a);
+    const len = dir.length();
+    dir.normalize();
+    const xAx = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), dir).normalize();
+    const yAx = new THREE.Vector3().crossVectors(dir, xAx).normalize();
+    const g = new THREE.ExtrudeGeometry(uShape(), { depth: len, bevelEnabled: false });
+    g.applyMatrix4(new THREE.Matrix4().makeBasis(xAx, yAx, dir).setPosition(a));
+    machine.add(new THREE.Mesh(g, M.dark));
   }
   // 槽后裙板：把出口下方到机台底沿之间的空档补成机身
   const apron = new THREE.Mesh(new THREE.BoxGeometry(1.90, 0.20, 0.02), M.body);
