@@ -333,6 +333,10 @@ function box(w, h, d, mat) {
 // 投币显示窗（玻璃板 + 左右斜坡 + 中央洞 + 计数屏）
 // ---------------------------------------------------------------------------
 const CHIP_WINDOW = { cx: -0.25, w: 1.18, top: 1.58, bot: 1.27, holeHalf: 0.062 };
+// 球心压在斜板上的高度：板顶面在斜坡线以上约 0.010（BOARD_H 的一半减偏移），
+// 球半径 0.030 在 22° 斜面上接触时的竖直抬升 = r/cos ≈ 0.032，合计 ≈ 0.042。
+// 用 0.026（球心几乎埋在板里）会看到球陷进板面一半。
+const CHIP_RIDE = 0.042;
 const chipReadout = { tex: null, ctx: null };
 const chipBalls = [];
 let chipSpawnT = 0;
@@ -426,7 +430,10 @@ function rampYAt(ax) {
     const midY = (top - 0.045 + bot + 0.075) / 2;
     const ramp = new THREE.Mesh(new THREE.BoxGeometry(len, BOARD_H, 0.030), M.steel);
     ramp.position.set(midX, midY - BOARD_H * 0.30, RAMP_Z);
-    ramp.rotation.z = -s * RAMP.ang;
+    // 板面必须朝洞口下倾（外侧高、洞边低），与 rampYAt()/立柱/支脚一致；
+    // 之前写成 -s*ang，板是反着插的：外侧端垂到窗底、洞边端翘到窗顶，
+    // 看起来像"从洞往两边爬升"，和筹码球实际下滑的方向、和红线的 V 形都对不上。
+    ramp.rotation.z = s * RAMP.ang;
     ramp.castShadow = true;
     g.add(ramp);
     // 板的上缘一道金边：强调"高出玻璃的斜面"
@@ -1624,7 +1631,7 @@ function animate(now) {
       const ax = Math.abs(b.x - RAMP.cx);
       if (ax <= CHIP_WINDOW.holeHalf && b.y <= CHIP_WINDOW.bot + 0.075) {
         b.mode = 2;
-      } else if (ax > CHIP_WINDOW.holeHalf && b.y <= rampYAt(ax) + 0.026) {
+      } else if (ax > CHIP_WINDOW.holeHalf && b.y <= rampYAt(ax) + CHIP_RIDE) {
         b.mode = 1;                      // 撞到导条，开始沿导条滑向洞口
         b.v = Math.max(0.9, b.v * 0.75);
       }
@@ -1633,7 +1640,7 @@ function animate(now) {
       const dir = Math.sign(b.x - RAMP.cx) || 1;
       const ax = Math.max(CHIP_WINDOW.holeHalf, Math.abs(b.x - RAMP.cx) - b.v * 1.25 * dt);
       b.x = RAMP.cx + dir * ax;
-      b.y = rampYAt(ax) + 0.026;
+      b.y = rampYAt(ax) + CHIP_RIDE;
       b.mesh.rotation.z -= dir * (b.v * dt) / 0.026;
       b.mesh.position.set(b.x, b.y, chipBalls.surfaceZ);
       if (ax <= CHIP_WINDOW.holeHalf + 0.001) b.mode = 2;
