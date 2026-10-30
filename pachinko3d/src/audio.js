@@ -237,6 +237,23 @@ function chip(i = 0) {
   nz(t, { dur: 0.04, vol: 0.028, type: 'bandpass', freq: 4400, q: 2.2 });
 }
 
+// ---- 筹码球落进受皿：一堆金属小球互相磕碰的密集碎响 ----
+let trayWinStart = 0, trayBurst = 0;
+function trayDrop(v = 1) {
+  if (!live()) return;
+  const now = performance.now();
+  if (now - trayWinStart > 110) { trayWinStart = now; trayBurst = 0; }
+  if (trayBurst >= 3) return;          // 一次落一片，限流成"哗啦"而不是噪音墙
+  trayBurst++;
+  const t = ac.currentTime + 0.001;
+  const k = Math.min(1, v);
+  const f = 1450 + Math.random() * 900;
+  const vol = 0.016 + k * 0.018;
+  blip(t, { f, dur: 0.055, type: 'sine', vol });
+  blip(t, { f: f * 1.61, dur: 0.032, type: 'sine', vol: vol * 0.45 });
+  nz(t, { dur: 0.032, vol: 0.014 + k * 0.012, type: 'bandpass', freq: 3100, q: 2.2 });
+}
+
 // ---- 拉杆：拖动时的棘轮咔哒（按力度分档）----
 function dragTick(p) {
   if (!live()) return;
@@ -319,5 +336,5 @@ function lose() {
 
 export const audio = {
   unlock, isMuted, setMuted, toggle,
-  click, round, peg, chip, coinIns, dragTick, dragReset, launch, land, win, lose,
+  click, round, peg, chip, coinIns, trayDrop, dragTick, dragReset, launch, land, win, lose,
 };

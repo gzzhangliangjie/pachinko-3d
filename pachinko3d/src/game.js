@@ -65,6 +65,7 @@ scene.fog = new THREE.Fog(0x04060b, 7, 18);
 const camera = new THREE.PerspectiveCamera(37, window.innerWidth / window.innerHeight, 0.05, 80);
 const CAM_BASE = new THREE.Vector3(0, 0.02, 5.85);
 let LOOK_Y = 0.05;
+let LOOK_X = 0;
 camera.position.copy(CAM_BASE);
 camera.lookAt(0, 0.05, 0);
 
@@ -145,6 +146,8 @@ const FRONT_Z = 0.18, BACK_Z = -0.20;
 const COIN_SLOT = { x: -0.935, y: DECK_Y + 0.01, z: FRONT_Z + 0.006 };
 let coinLedMat = null;      // 投币口指示灯材质（投币时闪一下）
 let coinLedT = 0;
+const coinHit = [];         // 投币口的可点击网格：点它 = 投一枚币（和「投币 +10」按钮等价）
+let coinHover = false;      // 鼠标是否停在投币口上（点亮下面那颗金色指示灯）
 
 function box(w, h, d, mat) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -226,11 +229,12 @@ function box(w, h, d, mat) {
   // 底座右端让位给弹射滑道 + 拉杆：它们现在全程在 railZ(=0.055) 平面（不斜插），
   // 若底座横贯到右缘，就会立一块板挡在 z=0.18、把滑道底和拉杆整个盖住。
   // 让位区间与右立柱的贯通槽对齐（x 0.868 起），滑道/拉杆从开口里露出来。
+  // 面板下部整块挖空，让给筹码筐（TRAY 段）；
+  // 这里只留筐口正上方的一条窄边框 —— 出球孔就藏在它的底面（朝下，看不见）。
   {
-    const deckXR = OPEN_W / 2 + 0.018;                    // 0.868
-    const deckW = deckXR - (-OUT_W / 2);
-    const deck = box(deckW, DECK_H, FRONT_Z - BACK_Z, M.body);
-    deck.position.set((-OUT_W / 2 + deckXR) / 2, DECK_Y, (FRONT_Z + BACK_Z) / 2);
+    const deckXR = 0.868, deckXL = -0.85;
+    const deck = box(deckXR - deckXL, 0.032, FRONT_Z - BACK_Z, M.body);
+    deck.position.set((deckXL + deckXR) / 2, -1.266, (FRONT_Z + BACK_Z) / 2);
     g.add(deck);
   }
 
@@ -290,13 +294,6 @@ function box(w, h, d, mat) {
     g.add(b);
   }
 
-  const slotPlate = box(0.34, 0.11, 0.02, M.steel);
-  slotPlate.position.set(-0.58, DECK_Y, FRONT_Z + 0.006);
-  g.add(slotPlate);
-  const slotHole = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.02, 0.008), new THREE.MeshStandardMaterial({ color: 0x02040a, roughness: 1 }));
-  slotHole.position.set(-0.58, DECK_Y + 0.004, FRONT_Z + 0.017);
-  g.add(slotHole);
-
   // ---- 投币口（面板左下角）：钢板 + 镀铬圈 + 竖向投币缝 + 金色指示灯 ----
   {
     const cplate = box(0.13, 0.24, 0.014, M.steel);
@@ -312,27 +309,19 @@ function box(w, h, d, mat) {
     const led = new THREE.Mesh(new THREE.CircleGeometry(0.013, 14), coinLedMat);
     led.position.set(COIN_SLOT.x, COIN_SLOT.y - 0.088, COIN_SLOT.z + 0.010);
     g.add(led);
+
+    // 整块投币口可点：钢板只有 13×24cm，正视时屏幕上就几十像素，鼠标很难点准。
+    // 前面垫一块完全透明的大热区（材质可见但 opacity 0），点它的任意位置都算点中投币口。
+    const hot = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.30, 0.40),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
+    );
+    hot.position.set(COIN_SLOT.x, COIN_SLOT.y + 0.02, COIN_SLOT.z + 0.018);
+    g.add(hot);
+    coinHit.push(cplate, cring, slit, led, hot);
   }
 
-  [NEON.cyan, NEON.gold, NEON.magenta].forEach((c, i) => {
-    const btn = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.026, 24), neonMat(c, 1.6));
-    btn.rotation.x = Math.PI / 2;
-    btn.position.set(0.30 + i * 0.13, DECK_Y, FRONT_Z + 0.012);
-    g.add(btn);
-    const ringM = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.006, 8, 28), M.chrome);
-    ringM.position.copy(btn.position);
-    ringM.position.z -= 0.004;
-    g.add(ringM);
-  });
-
-  const tray = box(0.66, 0.16, 0.10, M.dark);
-  tray.position.set(-0.5, DECK_Y - 0.14, FRONT_Z - 0.02);
-  g.add(tray);
-  for (let i = 0; i < 16; i++) {
-    const b = new THREE.Mesh(new THREE.SphereGeometry(0.026, 12, 10), M.ball);
-    b.position.set(-0.76 + (i % 8) * 0.075, DECK_Y - 0.095 + Math.floor(i / 8) * 0.052, FRONT_Z - 0.02);
-    g.add(b);
-  }
+  // 面板下部整块让给筹码筐（三颗装饰彩灯也一并撤掉，它们正卡在筐口）
 
   for (const s of [-1, 1]) {
     const foot = box(0.22, 0.05, 0.34, M.rubber);
@@ -348,6 +337,299 @@ function box(w, h, d, mat) {
   glass.position.set(0, (OPEN_H / 2 - 0.01 + glassBot) / 2, FRONT_Z - 0.03);
   glass.renderOrder = 5;
   g.add(glass);
+}
+
+// ---------------------------------------------------------------------------
+// 筹码筐（上皿）：机台正面下部那只接球的筐
+//   · 横向只占「投币口右缘 → 拉杆左缘」（左右两立柱之间的整段），不压两个操作件
+//   · 筐口朝上前方敞开，正面是一排竖栅条：缝 46mm < 球径 60mm，球出不来、里面看得见
+//   · 筐底跟着机台后仰 16°，球自然往前堆，视线一进筐先看到的就是球堆顶
+//   · 出球孔藏在筐口正上方那道边框的底面，朝下出球，正常视角看不到
+// ---------------------------------------------------------------------------
+const CHIP_R = 0.030;
+const BIN = {
+  x0: -0.85, x1: 0.85,      // 内宽 1.70（左立柱右缘 ↔ 右立柱左缘）
+  yTop: -1.302,             // 筐口
+  yBot: -1.632,             // 筐底
+  zBack: -0.10,             // 内后壁
+  zFront: 0.185,            // 内前壁（栅栏）
+  cap: 620,                 // 同时存在的球上限（再多只记数不出球）
+};
+BIN.w = BIN.x1 - BIN.x0;
+BIN.d = BIN.zFront - BIN.zBack;
+BIN.h = BIN.yTop - BIN.yBot;
+BIN.cx = (BIN.x0 + BIN.x1) / 2;
+BIN.zMid = (BIN.zBack + BIN.zFront) / 2;
+
+// 出球孔：筐口上方那道边框的底面正中，朝下
+const MOUTH = { x: 0, y: -1.294, z: 0.045, w: 0.34, d: 0.09 };
+
+const trayGroup = new THREE.Group();
+machine.add(trayGroup);      // 跟着机台一起后仰
+
+{
+  const { cx, w, d, h, zBack, zFront, zMid, yTop, yBot, x0, x1 } = BIN;
+  const put = (mesh) => { mesh.castShadow = true; mesh.receiveShadow = true; trayGroup.add(mesh); return mesh; };
+
+  // 筐底（拉丝钢）+ 后壁（暗板，挡住机台内部的空腔）
+  put(box(w, 0.016, d, M.steel)).position.set(cx, yBot - 0.008, zMid);
+  put(box(w, h + 0.05, 0.018, M.dark)).position.set(cx, (yTop + yBot) / 2, zBack - 0.009);
+
+  // 栅条：前 + 左右各一排竖条。条宽 14mm、中心距 60mm → 缝 46mm，球（直径 60mm）漏不出去
+  const PITCH = 0.060, BAR = 0.014;
+  const bars = [];
+  const nF = Math.floor(w / PITCH);
+  for (let i = 0; i <= nF; i++) {
+    bars.push([x0 + (w - nF * PITCH) / 2 + i * PITCH, (yTop + yBot) / 2, zFront - 0.007]);
+  }
+  const nS = Math.floor(d / PITCH);
+  for (const sx of [x0 - 0.007, x1 + 0.007]) {
+    for (let i = 0; i <= nS; i++) {
+      bars.push([sx, (yTop + yBot) / 2, zBack + (d - nS * PITCH) / 2 + i * PITCH]);
+    }
+  }
+  const barMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(BAR, h, BAR), M.steel, bars.length);
+  const bm = new THREE.Matrix4();
+  bars.forEach(([x, y, z], i) => { bm.makeTranslation(x, y, z); barMesh.setMatrixAt(i, bm); });
+  barMesh.castShadow = true;
+  barMesh.receiveShadow = true;
+  trayGroup.add(barMesh);
+
+  // 框：上下口沿 + 左右立柱（镀铬，把"筐"的轮廓勾出来）
+  put(box(w + 0.05, 0.020, 0.030, M.chrome)).position.set(cx, yTop + 0.010, zFront - 0.006);
+  put(box(w + 0.05, 0.018, 0.028, M.chrome)).position.set(cx, yBot + 0.008, zFront - 0.008);
+  for (const sx of [x0 - 0.012, x1 + 0.012]) {
+    put(box(0.024, h + 0.03, 0.028, M.chrome)).position.set(sx, (yTop + yBot) / 2, zFront - 0.008);
+  }
+
+  // 筐口后沿一条金色灯带 + 一盏暖光：球堆才不会陷进黑影里
+  const strip = new THREE.Mesh(new THREE.BoxGeometry(w - 0.10, 0.008, 0.008), neonMat(NEON.gold, 1.0));
+  strip.position.set(cx, yTop - 0.014, zBack + 0.022);
+  trayGroup.add(strip);
+  const trayLight = new THREE.PointLight(0xffd7a0, 1.9, 1.15, 2);
+  trayLight.position.set(cx, yTop + 0.09, zMid + 0.12);
+  machine.add(trayLight);
+}
+
+// ---- 出球孔：贴在筐口上方边框的底面，朝下（正常视角看不到）----
+{
+  const hole = new THREE.Mesh(
+    new THREE.PlaneGeometry(MOUTH.w, MOUTH.d),
+    new THREE.MeshStandardMaterial({ color: 0x01020a, roughness: 1, metalness: 0 }),
+  );
+  hole.rotation.x = Math.PI / 2;
+  hole.position.set(MOUTH.x, MOUTH.y, MOUTH.z);
+  machine.add(hole);
+}
+
+// 球在孔口正下方出生（已经落到筐口以下，看不见它"出现"的那一刻）
+const MOUTH_WORLD = new THREE.Vector3(MOUTH.x, MOUTH.y - 0.012, MOUTH.z);
+machine.updateMatrixWorld(true);
+MOUTH_WORLD.applyMatrix4(machine.matrixWorld);
+
+// ---- 皿的物理：独立世界（几百颗球绝不能拖慢盘面上的钢珠）----
+const trayWorld = new CANNON.World({ gravity: new CANNON.Vec3(0, -14, 0) });
+trayWorld.broadphase = new CANNON.SAPBroadphase(trayWorld);
+trayWorld.allowSleep = true;
+trayWorld.solver.iterations = 14;
+trayWorld.solver.tolerance = 0.001;
+trayWorld.defaultContactMaterial.friction = 0.2;
+trayWorld.defaultContactMaterial.restitution = 0.1;
+// 几百颗球压在一起时，默认刚度撑不住 —— 球会被挤进底板/栅栏里半颗，
+// 视觉上就是"球没落到篮底""球穿出了栏杆"。提高接触刚度 + 迭代次数。
+trayWorld.defaultContactMaterial.contactEquationStiffness = 1e9;
+trayWorld.defaultContactMaterial.contactEquationRelaxation = 3;
+const trayMatWall = new CANNON.Material('trayWall');
+const trayMatBall = new CANNON.Material('trayBall');
+trayWorld.addContactMaterial(new CANNON.ContactMaterial(trayMatBall, trayMatWall, {
+  friction: 0.22, restitution: 0.14, contactEquationStiffness: 1e9, contactEquationRelaxation: 3,
+}));
+trayWorld.addContactMaterial(new CANNON.ContactMaterial(trayMatBall, trayMatBall, {
+  friction: 0.16, restitution: 0.08, contactEquationStiffness: 1e9, contactEquationRelaxation: 3,
+}));
+
+{
+  const { cx, w, zBack, zFront, zMid, yBot } = BIN;
+  // 【关键】筐壁用无限平面，不用 Box。
+  // Box 墙在几百颗球叠压时会被解算穿（球陷进底板半颗、球从栅条里挤出来，
+  // 就是"球没落到底"和"栏杆挡不住球"这两个反复出现的问题）。
+  // Plane 的接触是解析的，永远不会被打穿。
+  const qFromNormal = (nx, ny, nz) => {
+    const from = new CANNON.Vec3(0, 0, 1);
+    const to = new CANNON.Vec3(nx, ny, nz);
+    to.normalize();
+    const q = new CANNON.Quaternion();
+    const dot = Math.max(-1, Math.min(1, from.dot(to)));
+    if (dot > 0.99999) return q;
+    if (dot < -0.99999) { q.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), Math.PI); return q; }
+    const axis = new CANNON.Vec3();
+    from.cross(to, axis);
+    axis.normalize();
+    q.setFromAxisAngle(axis, Math.acos(dot));
+    return q;
+  };
+  const plane = (nl, pl) => {
+    const b = new CANNON.Body({ mass: 0, material: trayMatWall });
+    b.addShape(new CANNON.Plane());
+    const n = localDir(nl[0], nl[1], nl[2]);
+    b.quaternion.copy(qFromNormal(n.x, n.y, n.z));
+    const p = localPos(pl[0], pl[1], pl[2]);
+    b.position.set(p.x, p.y, p.z);
+    trayWorld.addBody(b);
+  };
+  plane([0, 1, 0], [0, yBot, zMid]);                     // 底（与视觉底板顶面完全同高）
+  plane([0, 0, -1], [0, 0, zFront - 0.020]);             // 前（退到栅条后 1.3cm，球不会露出栏杆）
+  plane([0, 0, 1], [0, 0, zBack + 0.004]);               // 后
+  plane([1, 0, 0], [cx - w / 2 + 0.004, 0, 0]);          // 左
+  plane([-1, 0, 0], [cx + w / 2 - 0.004, 0, 0]);         // 右
+}
+
+// ---- 球的渲染：一个 InstancedMesh 画全部，物理各算各的 ----
+const trayBalls = [];          // { body, born, lifted, dead }
+const trayChipGeo = new THREE.SphereGeometry(CHIP_R, 14, 10);
+const trayChipMat = new THREE.MeshStandardMaterial({
+  color: 0xf7c74f, metalness: 1, roughness: 0.2, envMap: env, envMapIntensity: 1.4,
+  emissive: 0x6a4308, emissiveIntensity: 0.4,
+});
+const trayMesh = new THREE.InstancedMesh(trayChipGeo, trayChipMat, BIN.cap);
+trayMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+trayMesh.frustumCulled = false;
+trayMesh.count = 0;
+// 【必须挂在 scene 下】球的物理坐标是世界坐标。之前挂在 trayGroup（随机器后仰 16°）里，
+// 世界坐标又被旋转了一次 —— 球整体往前上方偏，才出现"球跑到栏杆外面""球飘着没落到底"。
+scene.add(trayMesh);
+
+const _tm = new THREE.Matrix4();
+const _tq = new THREE.Quaternion();
+const _tv = new THREE.Vector3();
+const _ts = new THREE.Vector3(1, 1, 1);
+
+function spawnTrayBall() {
+  if (trayBalls.length >= BIN.cap) return null;
+  const body = new CANNON.Body({
+    mass: 0.018,
+    material: trayMatBall,
+    shape: new CANNON.Sphere(CHIP_R),
+    linearDamping: 0.02,
+    angularDamping: 0.14,
+  });
+  body.position.set(
+    MOUTH_WORLD.x + (Math.random() - 0.5) * 0.20,
+    MOUTH_WORLD.y + (Math.random() - 0.5) * 0.02,
+    MOUTH_WORLD.z + Math.random() * 0.04,
+  );
+  // 沿"机台前脸朝外下方"给初速：球才会飞过皿后壁落进盒子里
+  const v = localDir((Math.random() - 0.5) * 0.12, -0.22, (Math.random() - 0.5) * 0.12);
+  body.velocity.set(v.x, v.y, v.z);
+  body.angularVelocity.set((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
+  body.allowSleep = false;   // 一 sleep 就再也不会被 solver 从墙里推回来，堆高了会越陷越深
+  trayWorld.addBody(body);
+
+  const rec = { body, born: performance.now(), lifted: false, dead: 0 };
+  // 只在前 0.8 秒里听碰撞：落进皿的那一声，之后静音（几百个监听器不能再触发）
+  const onHit = () => {
+    if (performance.now() - rec.born > 800) return;
+    rec.born = -1e9;
+    audio.trayDrop(Math.min(1, Math.abs(body.velocity.y) / 4));
+  };
+  body.addEventListener('collide', onHit);
+  trayBalls.push(rec);
+  return rec;
+}
+
+/** 皿里现在有多少颗"算数"的球（飞向装填窗的那几颗不算） */
+function trayLiveCount() {
+  let n = 0;
+  for (const b of trayBalls) if (!b.lifted) n++;
+  return n;
+}
+
+/** 从最上面摘一颗球（装填时被吸走的那颗） */
+function flyTrayBallToWindow() {
+  let hi = -1, hy = -1e9;
+  for (let i = 0; i < trayBalls.length; i++) {
+    const b = trayBalls[i];
+    if (b.lifted) continue;
+    if (b.body.position.y > hy) { hy = b.body.position.y; hi = i; }
+  }
+  if (hi < 0) return false;
+  const rec = trayBalls[hi];
+  rec.lifted = true;
+  rec.dead = performance.now() + 340;
+  rec.body.allowSleep = false;
+  rec.body.wakeUp();
+  // 朝装填窗（机头中部玻璃板）方向甩出去：看得见"球被吸上去装填"
+  rec.body.velocity.set(-0.45 + (Math.random() - 0.5) * 0.5, 5.4, -0.95);
+  rec.body.angularVelocity.set(Math.random() * 7, Math.random() * 7, Math.random() * 7);
+  return true;
+}
+
+/** 回收一颗球：优先从最高处（看不见的那颗先走） */
+function removeTrayBall(top = true) {
+  if (!trayBalls.length) return false;
+  let idx = trayBalls.length - 1;
+  if (top) {
+    let hy = -1e9;
+    for (let i = 0; i < trayBalls.length; i++) {
+      if (trayBalls[i].body.position.y > hy) { hy = trayBalls[i].body.position.y; idx = i; }
+    }
+  }
+  trayWorld.removeBody(trayBalls[idx].body);
+  trayBalls.splice(idx, 1);
+  return true;
+}
+
+let trayFillAcc = 0;
+
+function updateTray(dt) {
+  const target = Math.min(state.chips, BIN.cap);
+  let live = trayLiveCount();
+
+  // 吐球：筹码多了就从出球口补
+  if (live < target) {
+    trayFillAcc += dt * (target - live > 40 ? 95 : 26);
+    let guard = 0;
+    while (trayFillAcc >= 1 && trayLiveCount() < target && trayBalls.length < BIN.cap && guard++ < 24) {
+      trayFillAcc -= 1;
+      spawnTrayBall();
+      live++;
+    }
+    if (trayFillAcc > 6) trayFillAcc = 6;
+  } else {
+    trayFillAcc = 0;
+  }
+
+  // 收球：筹码变少了（输了/装填了）就从最上面撤掉。
+  // 装填动画期间不撤 —— 那一刻由 flyTrayBallToWindow() 逐颗飞走，跟窗口里的球对上。
+  if (live > target && state.phase !== 'loading') {
+    let n = Math.min(live - target, 3);
+    while (n-- > 0 && removeTrayBall(true)) live--;
+  }
+
+  trayWorld.step(1 / 60, dt, 3);
+
+  // 清理：飞走 340ms 后的球、以及翻出盒子的漏网之鱼
+  const now = performance.now();
+  for (let i = trayBalls.length - 1; i >= 0; i--) {
+    const b = trayBalls[i];
+    const p = b.body.position;
+    const gone = (b.dead && now > b.dead)
+      || p.y < -2.1 || p.z < -0.6 || p.z > 1.0
+      || Math.abs(p.x) > 1.4;
+    if (gone) { trayWorld.removeBody(b.body); trayBalls.splice(i, 1); }
+  }
+
+  // 同步到 InstancedMesh
+  let n = 0;
+  for (let i = 0; i < trayBalls.length; i++) {
+    const b = trayBalls[i].body;
+    _tv.set(b.position.x, b.position.y, b.position.z);
+    _tq.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
+    _tm.compose(_tv, _tq, _ts);
+    trayMesh.setMatrixAt(n++, _tm);
+  }
+  trayMesh.count = n;
+  trayMesh.instanceMatrix.needsUpdate = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1584,10 +1866,30 @@ if (ui.coinBtn) {
   ui.coinBtn.addEventListener('click', () => insertCoin());
 }
 
+// ---- 点机身左下角的投币口投币（与「投币 +10」按钮同一条路径）----
+const coinRay = new THREE.Raycaster();
+const coinNd = new THREE.Vector2();
+let coinHoverT = 0;
+/** 屏幕坐标是否打在投币口上 */
+function pickCoinSlot(clientX, clientY) {
+  const r = renderer.domElement.getBoundingClientRect();
+  if (!r.width || !r.height) return false;
+  coinNd.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+  coinRay.setFromCamera(coinNd, camera);
+  return coinRay.intersectObjects(coinHit, false).length > 0;
+}
+/** 悬停反馈：投币口指示灯点亮 + 手型光标 */
+function setCoinHover(on) {
+  coinHover = on;
+  renderer.domElement.style.cursor = on ? 'pointer' : '';
+}
+
 // 直接抓住机台右下角的拉杆头拖：往下拉 → 弹簧拉长 → 松手弹出
 stage.addEventListener('pointerdown', (e) => {
   if (e.target !== renderer.domElement) return;
   ensureAudio();
+  // 投币口优先：任何时候点它都是投币，不会误触发装填筹码
+  if (pickCoinSlot(e.clientX, e.clientY)) { insertCoin(); return; }
   if (state.phase === 'idle') { insertChips(); return; }
   if (state.phase === 'armed') beginDrag(e.clientY);
 });
@@ -1655,7 +1957,17 @@ const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
 window.addEventListener('pointermove', (e) => {
   pointer.tx = (e.clientX / window.innerWidth - 0.5) * 2;
   pointer.ty = (e.clientY / window.innerHeight - 0.5) * 2;
+  // 鼠标停在投币口上换手型（每 50ms 才射一次线，拖拽时不打扰）
+  if (e.target === renderer.domElement && !dragCharge && !state.charging) {
+    const nowMs = performance.now();
+    if (nowMs - coinHoverT > 50) {
+      coinHoverT = nowMs;
+      setCoinHover(pickCoinSlot(e.clientX, e.clientY));
+    }
+  }
 });
+// 鼠标离开画布（去点 UI 或移出窗口）时收掉高亮
+renderer.domElement.addEventListener('pointerleave', () => setCoinHover(false));
 
 // ---------------------------------------------------------------------------
 // 主循环
@@ -1679,6 +1991,7 @@ function animate(now) {
   t += dt;
 
   world.step(1 / 300, dt, 12);
+  updateTray(dt);
   if (ballBody && state.phase === 'dropping') {
     laneConstrain(ballBody, CFG, 1 / 300);
     domeConstrain(ballBody, CFG, 1 / 300);
@@ -1691,6 +2004,7 @@ function animate(now) {
       const b = chipBalls.find((x) => !x.active);
       if (b) {
         chipQueue--;
+        flyTrayBallToWindow();          // 装填一颗，皿里就少一颗（球被吸向装填窗）
         b.active = true;
         b.mode = 0;
         const { cx, w } = CHIP_WINDOW;
@@ -1746,7 +2060,7 @@ function animate(now) {
 
   // ---- 投币动画：金币下落 → 没入投币缝 → 指示灯闪 + 火花 ----
   coinLedT = Math.max(0, coinLedT - dt);
-  if (coinLedMat) coinLedMat.emissiveIntensity = coinLedT > 0 ? 0.9 + 5.4 * (coinLedT / 0.4) : 0.9;
+  if (coinLedMat) coinLedMat.emissiveIntensity = coinLedT > 0 ? 0.9 + 5.4 * (coinLedT / 0.4) : (coinHover ? 2.6 : 0.9);
   for (const c of coinFx) {
     if (!c.active) continue;
     c.v = Math.min(1.4, c.v + 5.5 * dt);
@@ -1953,7 +2267,7 @@ function animate(now) {
     CAM_BASE.y - pointer.y * 0.10 + (Math.random() - 0.5) * shake,
     CAM_BASE.z,
   );
-  camera.lookAt(pointer.x * 0.04, LOOK_Y - pointer.y * 0.02, 0);
+  camera.lookAt(LOOK_X + pointer.x * 0.04, LOOK_Y - pointer.y * 0.02, 0);
 
   bloom.strength = 0.26 + flash;
   flash *= Math.pow(0.02, dt);
@@ -2088,6 +2402,42 @@ if (location.hash.includes('uidbg')) {       // 调试：走真实 DOM 按钮事
 if (location.hash.includes('lit')) {         // 截图用：直接摆到已点亮状态
   setTimeout(() => { insertChips(true); }, 500);
 }
+// 截图用：#tray=300 直接把筹码灌到指定数目，看受皿堆球效果
+{
+  const tm = location.hash.match(/tray=(\d+)/);
+  if (tm) setTimeout(() => { state.chips = parseInt(tm[1], 10); refreshHud(); }, 300);
+}
+// 临时诊断：#dbgpt 在世界坐标点一颗红球，用来确认屏幕可见范围
+if (location.hash.includes('bindbg')) {
+  setTimeout(() => {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;left:12px;top:140px;z-index:9999;color:#0f0;font:13px monospace;background:#000c;padding:10px;white-space:pre;line-height:1.5';
+    const mw = machine.matrixWorld;
+    const fw = new THREE.Vector3(0, -1.467, 0.215).applyMatrix4(mw);
+    const bt = new THREE.Vector3(0, -1.632, 0.0425).applyMatrix4(mw);
+    let mnY = 9, mxY = -9, mnZ = 9, mxZ = -9, mnX = 9, mxX = -9;
+    for (const b of trayBalls) {
+      const q = b.body.position;
+      mnY = Math.min(mnY, q.y); mxY = Math.max(mxY, q.y);
+      mnZ = Math.min(mnZ, q.z); mxZ = Math.max(mxZ, q.z);
+      mnX = Math.min(mnX, q.x); mxX = Math.max(mxX, q.x);
+    }
+    const dyn = trayWorld.bodies.filter((b) => b.mass > 0).length;
+    d.textContent = `balls=${trayBalls.length} dyn=${dyn} walls=${trayWorld.bodies.length - dyn}\n`
+      + `x=[${mnX.toFixed(2)}, ${mxX.toFixed(2)}]\ny=[${mnY.toFixed(2)}, ${mxY.toFixed(2)}]\nz=[${mnZ.toFixed(2)}, ${mxZ.toFixed(2)}]\n`
+      + `frontWall=(${fw.x.toFixed(2)}, ${fw.y.toFixed(2)}, ${fw.z.toFixed(2)})\n`
+      + `bottom=(${bt.x.toFixed(2)}, ${bt.y.toFixed(2)}, ${bt.z.toFixed(2)})`;
+    document.body.appendChild(d);
+  }, 4500);
+}
+if (location.hash.includes('dbgpt')) {
+  const pts = [[0, -1.79, 0.94], [0, -1.61, 0.62], [-0.85, -1.5, 1.2], [0.85, -1.5, 1.2]];
+  for (const [x, y, z] of pts) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 10), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+    m.position.set(x, y, z);
+    scene.add(m);
+  }
+}
 if (location.hash.includes('returndbg')) {   // 截图用：摆一颗球在回球槽中段
   setTimeout(() => {
     const mesh = new THREE.Mesh(new THREE.SphereGeometry(CFG.ballR, 26, 20), M.ball.clone());
@@ -2106,9 +2456,11 @@ if (location.hash.includes('returndbg')) {   // 截图用：摆一颗球在回�
   const m = location.hash.match(/cam=([\d.]+)/);
   const my = location.hash.match(/camy=(-?[\d.]+)/);
   const mx = location.hash.match(/camx=(-?[\d.]+)/);
+  const lx = location.hash.match(/lookx=(-?[\d.]+)/);
   if (m) CAM_BASE.z = parseFloat(m[1]);
   if (my) { CAM_BASE.y = parseFloat(my[1]); LOOK_Y = CAM_BASE.y - 0.05; }
   if (mx) CAM_BASE.x = parseFloat(mx[1]);
+  if (lx) LOOK_X = parseFloat(lx[1]);
 }
 
 newRound();                         // 进场就先亮出本局倍率
