@@ -5,7 +5,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 import {
   CFG, buildPhysicsWorld, createBallAt, nudge, slotCenterX, slotIndexFromX,
@@ -88,8 +88,11 @@ const keyLight = new THREE.SpotLight(0xffffff, 6, 16, 0.7, 0.5, 1.6);
 keyLight.position.set(0.4, 3.6, 4.0);
 keyLight.target.position.set(0, 0.1, 0);
 keyLight.castShadow = true;
-keyLight.shadow.mapSize.set(1024, 1024);
-keyLight.shadow.bias = -0.0006;
+keyLight.shadow.mapSize.set(2048, 2048);   // 1024 时阴影边界量化成块状（"不规则小块"的来源）
+keyLight.shadow.bias = -0.0004;
+keyLight.shadow.normalBias = 0.02;         // 消除曲面自阴影痤疮
+keyLight.shadow.camera.near = 2;
+keyLight.shadow.camera.far = 8.5;          // 收紧阴影视锥，把精度全部留给机身
 scene.add(keyLight, keyLight.target);
 
 const rimCyan = new THREE.PointLight(0x2ee6ff, 4.5, 7, 2);
@@ -523,35 +526,34 @@ const PLUNGE = { x: CFG.railX, y: CFG.railBottomY + 0.005, z: 0.245, travel: 0.1
 const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
 {
   const pts = railVisualPath(CFG);
+  // 弧段外壁 / 描边：逐段搭在弧面板棱线半径上（大部分埋进面板体内，只衔接处露头）
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1];
+    if (!a.arc) continue;
     const mx = (a.p[0] + b.p[0]) / 2, my = (a.p[1] + b.p[1]) / 2, mz = (a.p[2] + b.p[2]) / 2;
     const len = Math.hypot(b.p[0] - a.p[0], b.p[1] - a.p[1]) + 0.03;
     const ang = Math.atan2(a.t[1], a.t[0]);
     const lx = a.t[1], ly = -a.t[0];
-    if (a.arc) {
-      // 弧段：只有外侧壁（镀铬），贴着弧面板棱线顺势上延；一条品红霓虹
-      // 描边跟着走（与右侧立柱霓虹条同色），滑道汇入圆弧一目了然
-      const ow = new THREE.Mesh(new THREE.BoxGeometry(len, 0.014, 0.075), M.chrome);
-      ow.position.set(mx + lx * 0.0825, my + ly * 0.0825, mz);
-      ow.rotation.z = ang;
-      machine.add(ow);
-      const acc = new THREE.Mesh(new THREE.BoxGeometry(len, 0.009, 0.010), neonMat(NEON.magenta, 1.8));
-      acc.position.set(mx + lx * 0.088, my + ly * 0.088, mz + 0.042);
-      acc.rotation.z = ang;
-      machine.add(acc);
-      continue;
-    }
-    const back = new THREE.Mesh(new THREE.BoxGeometry(len, 0.10, 0.012), M.dark);
-    back.position.set(mx, my, mz - 0.062);
-    back.rotation.z = ang;
-    machine.add(back);
-    for (const s of [-1, 1]) {
-      const wallV = new THREE.Mesh(new THREE.BoxGeometry(len, 0.014, 0.075), M.steel);
-      wallV.position.set(mx + lx * s * 0.0825, my + ly * s * 0.0825, mz);
-      wallV.rotation.z = ang;
-      machine.add(wallV);
-    }
+    const ow = new THREE.Mesh(new THREE.BoxGeometry(len, 0.014, 0.075), M.chrome);
+    ow.position.set(mx + lx * 0.0825, my + ly * 0.0825, mz);
+    ow.rotation.z = ang;
+    machine.add(ow);
+    const acc = new THREE.Mesh(new THREE.BoxGeometry(len, 0.009, 0.010), neonMat(NEON.magenta, 1.8));
+    acc.position.set(mx + lx * 0.088, my + ly * 0.088, mz + 0.042);
+    acc.rotation.z = ang;
+    machine.add(acc);
+  }
+  // 直段：整条一根。此前按路径分 14 节、每节 +3mm 搭接量 —— 共面重叠的表面
+  // 在深度缓冲里互相打架（z-fighting），正视滑道就是"一块一块"的闪烁。
+  const yMid = (CFG.railBottomY + CFG.railTopY) / 2;
+  const railH = CFG.railTopY - CFG.railBottomY;
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.10, railH, 0.012), M.dark);
+  back.position.set(CFG.railX, yMid, CFG.railZ - 0.062);
+  machine.add(back);
+  for (const s of [-1, 1]) {
+    const wallV = new THREE.Mesh(new THREE.BoxGeometry(0.014, railH, 0.075), M.steel);
+    wallV.position.set(CFG.railX + s * 0.0825, yMid, CFG.railZ);
+    machine.add(wallV);
   }
   const stop = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.03, 0.075), M.chrome);
   stop.position.set(CFG.railX, CFG.railBottomY - 0.015, CFG.laneZ);
@@ -625,51 +627,22 @@ const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
     const aR = Math.acos(clamp((CFG.railX - domeCx) / lim));
     const aL = Math.acos(clamp((CFG.domeExitX - domeCx) / lim));
 
-    // 端头收口：面板/灯线/镀铬线/导轨面是四层不同半径的板，若在端点各自径向平切，
-    // 切口会落在不同半径上，侧面看就是一排阶梯锯齿（弧顶衔接显生硬的原因）。
-    // 两端都让四层一起向同一条中心半径 RC 收拢、截面同步变薄，收成一个圆滑的尖端。
-    // 右端收口必须极短：弧带右端已经贴到机身边缘，多延伸一点尖端就会从
-    // 立柱槽里探出去，变成一块悬空的白色亮片。
-    const RC = domeR + 0.025;                // 收口汇聚的中心半径（各层向它叠合）
-    const CAP_R = 0.020, CAP_L = 0.072;      // 收口角长：右端极短，只够把切口收拢
-    const NCAP = 9;
-    const slices = [];
-    for (let i = 0; i < NCAP; i++) {         // 右端收口（滑道出口侧）
-      const u = (i + 0.5) / NCAP;
-      slices.push({ a: aR - CAP_R * (1 - u), k: Math.sqrt(Math.max(0, 1 - (1 - u) ** 2)), step: CAP_R / NCAP, cap: true });
-    }
-    for (let i = 0; i < NCAP; i++) {         // 左端收口（朝机头左缘，圆滑收尖）
-      const u = (i + 0.5) / NCAP;
-      slices.push({ a: aL + CAP_L * (1 - u), k: Math.sqrt(Math.max(0, 1 - (1 - u) ** 2)), step: CAP_L / NCAP, cap: true });
-    }
-    // 收口尖端必须留在机身轮廓之内，不许从机台侧边探出去变成悬空碎片
-    const X_LIMIT = OUT_W / 2 - 0.012;
-    // 端头收口仍用短切片，四层各自合并成一个几何体
-    const layerGeos = { body: [], neon: [], steel: [], chrome: [] };
-    const _m4 = new THREE.Matrix4(), _pos = new THREE.Vector3(), _quat = new THREE.Quaternion(), _one = new THREE.Vector3(1, 1, 1), _zAxis = new THREE.Vector3(0, 0, 1);
-    for (const s of slices) {
-      const a = s.a, k = s.k;
-      const len = s.step * RC * 1.7;
-      const q = a + Math.PI / 2;
-      const add = (r0, h0, depth, key) => {
-        const rr = RC + (r0 - RC) * k;
-        if (s.cap && Math.abs(domeCx + rr * Math.cos(a)) > X_LIMIT) return;
-        _pos.set(domeCx + rr * Math.cos(a), domeCy + rr * Math.sin(a), CFG.railZ);
-        _quat.setFromAxisAngle(_zAxis, q);
-        layerGeos[key].push(new THREE.BoxGeometry(len, h0 * k, depth).applyMatrix4(_m4.compose(_pos, _quat, _one)));
-      };
-      add(domeR + 0.020, 0.040, 0.150, 'body');   // 面板本体
-      add(domeR + 0.046, 0.010, 0.140, 'neon');   // 灯线
-      add(domeR + 0.004, 0.010, 0.126, 'steel');  // 钢导轨面（球在这上面滚）
-      add(domeR + 0.014, 0.012, 0.136, 'chrome'); // 镀铬棱线
-    }
+    // 端头收口并进曲面本身：外弧延伸过 aL 后用一条斜弦收到内径尖端（左端圆滑收尖），
+    // 右端在 aR 处径向平切（贴机身边缘，绝不能外延）。整条弧每层只有一个几何体，
+    // 没有任何搭接切片 —— 消除切片共面重叠导致的 z-fighting 分块闪烁。
+    const CAP_L = 0.072;                     // 左端收口角长
     // 中段弧带：弯月截面（内弧+外弧闭合）沿 z 挤成整条曲面，
     // 顶点焊接后重算法线 → 连续平滑，彻底消灭分片拼接的接缝/条纹
-    const moonLayer = (r0, r1, depth) => {
+    // tipFrac: 外弧多延伸 CAP_L*tipFrac 后开始向内径尖端收口（0 = 外弧到 aL 即收）
+    const moonLayer = (r0, r1, depth, tipFrac = 0) => {
+      const aTip = aL + CAP_L;
+      const aOut = aL + CAP_L * tipFrac;
       const shp = new THREE.Shape();
-      shp.absarc(0, 0, r1, aR, aL, false);        // 外弧
-      shp.absarc(0, 0, r0, aL, aR, true);         // 内弧
-      shp.closePath();
+      shp.moveTo(Math.cos(aR) * r1, Math.sin(aR) * r1);
+      shp.absarc(0, 0, r1, aR, aOut, false);            // 外弧
+      shp.lineTo(Math.cos(aTip) * r0, Math.sin(aTip) * r0); // 斜弦收尖
+      shp.absarc(0, 0, r0, aTip, aR, true);             // 内弧
+      shp.closePath();                                   // 右端径向切
       let g = new THREE.ExtrudeGeometry(shp, { depth, curveSegments: 128, bevelEnabled: false });
       g.deleteAttribute('uv'); g.deleteAttribute('normal');
       g = mergeVertices(g, 1e-4);
@@ -677,23 +650,21 @@ const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
       g.translate(0, 0, -depth / 2);
       return g;
     };
-    const bodyArc = new THREE.Mesh(moonLayer(domeR, domeR + 0.040, 0.150), M.body);
+    // 弧带专用哑光版机身色：与 M.body 同色（#0e131c），但整条内弧是连续光滑曲面，
+    // 金属漆+清漆会把环境光反射成一道宽幅白纹 —— 压低金属度/清漆/环境反射改成哑光
+    const bandMat = M.body.clone();
+    bandMat.roughness = 0.72;
+    bandMat.metalness = 0.2;
+    bandMat.clearcoat = 0;
+    bandMat.envMapIntensity = 0.1;
+    const bodyArc = new THREE.Mesh(moonLayer(domeR, domeR + 0.040, 0.150), bandMat);
     bodyArc.position.set(domeCx, domeCy, CFG.railZ);
-    bodyArc.castShadow = true;
+    // 不投影：弧带投到盘面背板上的大片阴影（贴图量化后就是一排不规则暗块）弊大于利
+    bodyArc.castShadow = false;
     machine.add(bodyArc);
-    const neonArc = new THREE.Mesh(moonLayer(domeR + 0.041, domeR + 0.051, 0.140), neonMat(NEON.cyan, 1.1));
+    const neonArc = new THREE.Mesh(moonLayer(domeR + 0.041, domeR + 0.051, 0.140, 0.45), neonMat(NEON.cyan, 0.85));
     neonArc.position.set(domeCx, domeCy, CFG.railZ);
     machine.add(neonArc);
-    const steelArc = new THREE.Mesh(moonLayer(domeR - 0.001, domeR + 0.009, 0.126), M.steel);
-    steelArc.position.set(domeCx, domeCy, CFG.railZ);
-    machine.add(steelArc);
-    const chromeArc = new THREE.Mesh(moonLayer(domeR + 0.008, domeR + 0.020, 0.136), M.chrome);
-    chromeArc.position.set(domeCx, domeCy, CFG.railZ);
-    machine.add(chromeArc);
-    machine.add(new THREE.Mesh(mergeGeometries(layerGeos.body), M.body));
-    machine.add(new THREE.Mesh(mergeGeometries(layerGeos.neon), neonMat(NEON.cyan, 1.1)));
-    machine.add(new THREE.Mesh(mergeGeometries(layerGeos.steel), M.steel));
-    machine.add(new THREE.Mesh(mergeGeometries(layerGeos.chrome), M.chrome));
 
     // 拱肩填充：把弧面板与机头横梁之间的月牙空档填实（机身同色，不再露出背板的坑）
     // 左右铺到机身边缘：弧面带本身只画到物理端点，两侧剩下的角落由这块机身色填实
@@ -717,47 +688,33 @@ const BALL_SINK_MAX = 0.11;              // 球随拉杆下沉的最大量
 
     // 【物理 == 视觉】槽内球道底板：右立柱开槽后，球沿弧面滚动的那一段背后要有板衬着，
     // 否则槽里露出来的是背板黑洞。板画在球的后面（z 偏后），不遮挡球。
+    // 单条弯月挤出面（此前 10 块搭接盒共面重叠 → z-fighting 分块）。
     {
-      const cx0 = CFG.domeCx, cy0 = CFG.domeCy;
       const rI = domeR - 0.10, rO2 = domeR;              // 径向 1.26 -> 1.36（覆盖球所在半径）
-      const a0 = aR;
-      const a1 = Math.acos(clamp((OPEN_W / 2 - cx0) / rO2));
-      const segs3 = 10;
-      for (let i = 0; i < segs3; i++) {
-        const am = a0 + (a1 - a0) * (i + 0.5) / segs3;
-        const step = (a1 - a0) * domeR / segs3;
-        const len = step * 1.7;
-        const q = am + Math.PI / 2;
-        const rm = (rI + rO2) / 2;
-        const plate = new THREE.Mesh(new THREE.BoxGeometry(len, (rO2 - rI), 0.05), M.dark);
-        plate.position.set(cx0 + rm * Math.cos(am), cy0 + rm * Math.sin(am), CFG.railZ - 0.07);
-        plate.rotation.z = q;
-        machine.add(plate);
-      }
+      const a1 = Math.acos(clamp((OPEN_W / 2 - CFG.domeCx) / rO2));
+      const shp = new THREE.Shape();
+      shp.moveTo(CFG.domeCx + Math.cos(aR) * rO2, CFG.domeCy + Math.sin(aR) * rO2);
+      shp.absarc(CFG.domeCx, CFG.domeCy, rO2, aR, a1, false);
+      shp.absarc(CFG.domeCx, CFG.domeCy, rI, a1, aR, true);
+      shp.closePath();
+      const liner = new THREE.Mesh(new THREE.ExtrudeGeometry(shp, { depth: 0.05, curveSegments: 48, bevelEnabled: false }), M.dark);
+      liner.position.set(0, 0, CFG.railZ - 0.095);
+      machine.add(liner);
     }
   }
 
-  // 轨道玻璃罩（只铺直滑道段；弧段由弧面板本体承担）
+  // 轨道玻璃罩：直滑道整条一块（同样是消除 14 节搭接的 z-fighting 分块）
   {
-    const pts = railVisualPath(CFG);
-    for (let i = 0; i < pts.length - 1; i++) {
-      if (pts[i].arc) continue;
-      const a = pts[i], b = pts[i + 1];
-      const mx = (a.p[0] + b.p[0]) / 2, my = (a.p[1] + b.p[1]) / 2, mz = (a.p[2] + b.p[2]) / 2;
-      const len = Math.hypot(b.p[0] - a.p[0], b.p[1] - a.p[1]) + 0.03;
-      const ang = Math.atan2(a.t[1], a.t[0]);
-      const lx = a.t[1], ly = -a.t[0];
-      const cover = new THREE.Mesh(new THREE.BoxGeometry(len, 0.15, 0.006), M.glass);
-      cover.position.set(mx, my, mz + 0.055);
-      cover.rotation.z = ang;
-      cover.renderOrder = 7;
-      machine.add(cover);
-      for (const sd of [-1, 1]) {
-        const frame = new THREE.Mesh(new THREE.BoxGeometry(len, 0.012, 0.014), M.steel);
-        frame.position.set(mx + lx * sd * 0.082, my + ly * sd * 0.082, mz + 0.058);
-        frame.rotation.z = ang;
-        machine.add(frame);
-      }
+    const yMid = (CFG.railBottomY + CFG.railTopY) / 2;
+    const railH = CFG.railTopY - CFG.railBottomY;
+    const cover = new THREE.Mesh(new THREE.BoxGeometry(0.15, railH + 0.05, 0.006), M.glass);
+    cover.position.set(CFG.railX, yMid, CFG.railZ + 0.055);
+    cover.renderOrder = 7;
+    machine.add(cover);
+    for (const sd of [-1, 1]) {
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(0.012, railH + 0.05, 0.014), M.steel);
+      frame.position.set(CFG.railX + sd * 0.082, yMid, CFG.railZ + 0.058);
+      machine.add(frame);
     }
   }
 }
@@ -2029,14 +1986,15 @@ console.log(`理论 RTP ${(theoreticalRtp() * 100).toFixed(2)}%  出口数 ${SLO
 
 // 调试：#probe=x,y （屏幕归一化坐标）射线拾取，把命中的模型名/材质/位置打到页面上
 if (location.hash.includes('probe')) {
-  const pm = location.hash.match(/probe=([\d.]+),([\d.]+)/);
+  const pm = location.hash.match(/probe=([\d.]+),([\d.]+)(?:,([\d.]+))?/);
   const nx0 = pm ? parseFloat(pm[1]) : 0.9, ny = pm ? parseFloat(pm[2]) : 0.62;
+  const nx1 = pm && pm[3] !== undefined ? parseFloat(pm[3]) : 0.57;
   setTimeout(() => {
     const rc = new THREE.Raycaster();
     const scan = [];
     const N = 30;
     for (let i = 0; i <= N; i++) {
-      const nx = nx0 + (0.57 - nx0) * i / N;
+      const nx = nx0 + (nx1 - nx0) * i / N;
       rc.setFromCamera(new THREE.Vector2(nx * 2 - 1, -(ny * 2 - 1)), camera);
       const h = rc.intersectObjects(scene.children, true)[0];
       if (!h) { scan.push(`${nx.toFixed(3)} miss`); continue; }
